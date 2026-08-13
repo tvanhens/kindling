@@ -70,13 +70,6 @@ src/components/       UI primitives
 src/styles/           design tokens and themes
 ```
 
-## Going further
-
-[AGENTS.md](./AGENTS.md) covers the invariants worth not breaking, the Effect 4
-API differences that will trip up anything trained on Effect 3, the upstream
-quirks already worked around here, and the parts of the template that are not
-finished. Read it before making changes, whether you are a person or not.
-
 ## Contributing
 
 [CONTRIBUTING.md](./CONTRIBUTING.md) — the jj workflow (git works too),
