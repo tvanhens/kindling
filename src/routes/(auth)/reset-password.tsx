@@ -131,7 +131,7 @@ function RequestReset({ linkError }: { linkError: string | undefined }) {
           <Alert tone="info" title="Running locally?">
             No email provider is configured yet. The reset URL is printed to the dev server output
             as `[auth] password reset for …` — paste it into the address bar to continue. Wire a
-            real provider at the TODO(email) marker in `src/backend/api.ts`.
+            real provider at the TODO(email) marker in `src/backend/auth.ts`.
           </Alert>
         </Stack>
       </form>

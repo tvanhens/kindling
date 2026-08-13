@@ -1,6 +1,9 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
+import type * as DrizzleD1 from "alchemy/Drizzle/D1";
+import { Context } from "effect";
 import * as Effect from "effect/Effect";
+import type { relations } from "../db/schema.ts";
 
 /**
  * The application database: one D1 instance shared by Better Auth and Drizzle.
@@ -30,3 +33,25 @@ export const AppDatabase = Effect.gen(function* () {
     migrationsTable: "drizzle_migrations",
   });
 });
+
+/**
+ * The Drizzle handle over {@link AppDatabase}, as the runtime sees it.
+ *
+ * Derived from `Drizzle.D1`'s own return type so it cannot drift: it is the
+ * chainable proxy over `EffectSQLiteD1Database`, typed with this app's
+ * relations.
+ */
+export type AppDrizzle = Effect.Success<ReturnType<typeof DrizzleD1.D1<typeof relations>>>;
+
+/**
+ * The database, as a service.
+ *
+ * `AppDatabase` above is the *resource* (deploy time); this is the *handle*
+ * (request time). Domain services such as `./projects.ts` depend on this tag,
+ * which is what lets them be written and reasoned about without knowing how the
+ * Worker was wired. `./api.ts` builds the handle once in its init phase and
+ * provides it with `Layer.succeed(Database, db)`.
+ */
+export class Database extends Context.Service<Database, AppDrizzle>()(
+  "kindling/backend/Database",
+) {}

@@ -48,7 +48,7 @@ function RegisterPage() {
       return;
     }
 
-    // `requireEmailVerification` is false in `src/backend/api.ts`, so sign-up
+    // `requireEmailVerification` is false in `src/backend/auth.ts`, so sign-up
     // also signs in. Flip that flag and this navigation becomes a "check your
     // inbox" screen instead.
     await router.invalidate();
@@ -129,7 +129,7 @@ function RegisterPage() {
 
           <Text size="xs" tone="subtle">
             Email verification is disabled in this template and outbound email is stubbed to
-            `console.log` — see the TODO(email) markers in `src/backend/api.ts`.
+            `console.log` — see the TODO(email) markers in `src/backend/auth.ts`.
           </Text>
         </Stack>
       </form>

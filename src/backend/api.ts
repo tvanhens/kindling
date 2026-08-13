@@ -1,10 +1,7 @@
-import { BetterAuth } from "@alchemy.run/better-auth";
 import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as DrizzleD1 from "alchemy/Drizzle/D1";
 import type { RuntimeContext } from "alchemy/RuntimeContext";
-import { and, eq } from "drizzle-orm";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -12,17 +9,12 @@ import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
-import { projects, relations } from "../db/schema.ts";
-import { AppDatabase } from "./database.ts";
-import {
-  AppRpcs,
-  AuthMiddleware,
-  CurrentUser,
-  Project,
-  ProjectNotFound,
-  Unauthorized,
-  User,
-} from "./rpc.ts";
+import { relations } from "../db/schema.ts";
+import { Auth, makeAuth } from "./auth.ts";
+import { AppDatabase, Database } from "./database.ts";
+import { Profile } from "./profile.ts";
+import { Projects } from "./projects.ts";
+import { AppRpcs, AuthMiddleware, CurrentUser, Unauthorized, User } from "./rpc.ts";
 
 /**
  * The backend Worker.
@@ -38,7 +30,22 @@ import {
  * The Worker is private (`workersDev: false`); the browser reaches it through
  * the Website's service binding, which forwards the original `Request` — same
  * URL, same `Host`, same cookies. That property is what makes the auth
- * configuration below work without knowing the public origin at deploy time.
+ * configuration in `./auth.ts` work without knowing the public origin at
+ * deploy time.
+ *
+ * ## Layering
+ *
+ * This file is the **composition root and the RPC transport**, nothing else:
+ *
+ *   ./projects.ts, ./profile.ts   domain services — the actual logic
+ *      ^                          take their actor as an argument
+ *      |
+ *   AppRpcs handlers (here)       internal transport; `yield* CurrentUser`,
+ *                                 then call the service
+ *
+ * Adding a public REST/OpenAPI surface later is a third branch in the `fetch`
+ * dispatch below, provided the same service layers — not a second copy of the
+ * logic. See the "Adding a public API" section in AGENTS.md.
  */
 export default class Backend extends Cloudflare.Worker<Backend>()(
   "Backend",
@@ -54,58 +61,25 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     // bindings). Nothing here may depend on a live request.
     // -----------------------------------------------------------------------
 
-    const auth = yield* BetterAuth({
-      basePath: "/api/auth",
-
-      // ── Public origin ────────────────────────────────────────────────────
-      // `baseURL` and `trustedOrigins` are deliberately left unset.
-      //
-      // They would have to be the *Website's* origin, but the Website binds
-      // this Worker — a dependency cycle. Alchemy can express such cycles
-      // (https://alchemy.run/infrastructure-as-effects/circular-bindings) by
-      // splitting a Worker's Tag from its `.make()` implementation, but that
-      // escape hatch does not apply here: `Cloudflare.Website.Vite` has no
-      // `.make()` form to split, and threading the URL back in the other
-      // direction would put the whole stack module into the Worker bundle.
-      //
-      // Instead we lean on the property above: the Website proxies the browser's
-      // original request unchanged, so Better Auth derives the base URL from the
-      // incoming `Host`/`X-Forwarded-*` headers and defaults `trustedOrigins` to
-      // it. Its CSRF check still compares the `Origin` header against that same
-      // derived origin, so a cross-site POST is rejected exactly as it would be
-      // with a hardcoded value.
-      //
-      // If you later serve auth from a *second* origin (a native app, a
-      // marketing domain), set `trustedOrigins` here to an explicit list.
-
-      emailAndPassword: {
-        enabled: true,
-        // Flip to `true` once you have wired a real email provider below.
-        requireEmailVerification: false,
-
-        // TODO(email): send a real email.
-        // Replace this stub with your provider of choice — Cloudflare Email
-        // Sending via a `send_email` binding, Resend, Postmark, SES, ... Add the
-        // binding/secret to this Worker's props above and call it from here.
-        // Until then the link is logged so a fresh fork is runnable offline.
-        sendResetPassword: async ({ user, url }) => {
-          console.log(`[auth] password reset for ${user.email}: ${url}`);
-        },
-      },
-
-      emailVerification: {
-        sendOnSignUp: false,
-
-        // TODO(email): same as above — this is the second (and last) place a
-        // real email provider needs to be wired in.
-        sendVerificationEmail: async ({ user, url }) => {
-          console.log(`[auth] verify email for ${user.email}: ${url}`);
-        },
-      },
-    });
+    // The Better Auth configuration itself lives in `./auth.ts`, because both a
+    // transport (the middleware below) and a domain service (`./profile.ts`)
+    // need this instance — and the latter needs its *type* to declare a tag.
+    const auth = yield* makeAuth();
 
     const d1 = yield* Cloudflare.D1.QueryDatabase(AppDatabase);
     const db = yield* DrizzleD1.D1(d1, { relations });
+
+    /**
+     * The two init-phase values, published as services.
+     *
+     * `Projects.layer` and `Profile.layer` declare what they need (`Database`,
+     * `Auth`) and nothing about how this Worker was built; this is the single
+     * place the two halves meet. A future public-API branch provides the very
+     * same `ServicesLayer`.
+     */
+    const ServicesLayer = Layer.mergeAll(Projects.layer, Profile.layer).pipe(
+      Layer.provide([Layer.succeed(Database, db), Layer.succeed(Auth, auth)]),
+    );
 
     // -----------------------------------------------------------------------
     // Auth middleware
@@ -149,90 +123,50 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
 
     // -----------------------------------------------------------------------
     // Handlers
+    //
+    // Adapters, not logic. Each one does two things and stops: resolve the
+    // actor (`yield* CurrentUser`, put there by the middleware above) and hand
+    // it to a domain service. Nothing here knows any SQL.
+    //
+    // Identity is *never* read from a payload — `CurrentUser` is derived from
+    // the session cookie, and it is the only source of the `ownerId` the
+    // services scope their queries by.
     // -----------------------------------------------------------------------
 
-    const HandlersLayer = AppRpcs.toLayer({
-      me: () => CurrentUser,
+    const HandlersLayer = AppRpcs.toLayer(
+      Effect.gen(function* () {
+        const projects = yield* Projects;
+        const profile = yield* Profile;
 
-      updateProfile: Effect.fn("updateProfile")(function* ({ name, image }, { headers }) {
-        const requestHeaders = new Headers({ ...headers });
+        return {
+          me: () => CurrentUser,
 
-        // The `user` table belongs to Better Auth, so profile writes go through
-        // its API rather than through Drizzle. See src/db/schema.ts.
-        yield* auth.api.updateUser({ body: { name, image }, headers: requestHeaders });
+          updateProfile: Effect.fn("updateProfile")(function* (payload, { headers }) {
+            // `headers` is Effect's immutable record; Better Auth wants the DOM
+            // type. The credential *is* the actor for a profile write — see the
+            // note at the top of `./profile.ts`.
+            return yield* profile.update(new Headers({ ...headers }), payload);
+          }),
 
-        const session = yield* auth.getSession(requestHeaders);
-        const user = session?.user;
-        if (user === undefined) {
-          return yield* Effect.die(new Error("session vanished mid-request"));
-        }
+          // --- the CRUD pattern to copy -------------------------------------
 
-        return new User({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          emailVerified: user.emailVerified,
-          image: user.image ?? null,
-          createdAt: user.createdAt,
-        });
-      }, Effect.orDie),
+          listProjects: Effect.fn("listProjects")(function* () {
+            const user = yield* CurrentUser;
+            return yield* projects.list(user.id);
+          }),
 
-      // --- the CRUD pattern to copy ---------------------------------------
-      //
-      // Every query is scoped by `ownerId = currentUser.id`. Keep that filter in
-      // the SQL itself (not in a post-filter, not in a helper that a future
-      // handler might forget to call) — it is the only thing standing between
-      // one tenant's rows and another's.
+          createProject: Effect.fn("createProject")(function* (payload) {
+            const user = yield* CurrentUser;
+            return yield* projects.create(user.id, payload);
+          }),
 
-      listProjects: Effect.fn("listProjects")(function* () {
-        const user = yield* CurrentUser;
-        const rows = yield* db
-          .select()
-          .from(projects)
-          .where(eq(projects.ownerId, user.id))
-          .orderBy(projects.createdAt);
-        return rows.map((row) => new Project(row));
-      }, Effect.orDie),
-
-      createProject: Effect.fn("createProject")(function* ({ name, description }) {
-        const user = yield* CurrentUser;
-        const now = DateTime.toDate(yield* DateTime.now);
-
-        const [row] = yield* db
-          .insert(projects)
-          .values({
-            id: crypto.randomUUID(),
-            ownerId: user.id,
-            name,
-            description,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning();
-
-        if (row === undefined) {
-          return yield* Effect.die(new Error("insert returned no row"));
-        }
-        return new Project(row);
-      }, Effect.orDie),
-
-      deleteProject: Effect.fn("deleteProject")(function* ({ id }) {
-        const user = yield* CurrentUser;
-
-        // `and(eq(id), eq(ownerId))` makes "not found" and "not yours"
-        // indistinguishable to the caller — deliberately.
-        const [row] = yield* db
-          .delete(projects)
-          .where(and(eq(projects.id, id), eq(projects.ownerId, user.id)))
-          .returning()
-          .pipe(Effect.orDie);
-
-        if (row === undefined) {
-          return yield* new ProjectNotFound({ id });
-        }
-        return row.id;
+          deleteProject: Effect.fn("deleteProject")(function* ({ id }) {
+            const user = yield* CurrentUser;
+            return yield* projects.remove(user.id, id);
+          }),
+        };
       }),
-    });
+    );
 
     // -----------------------------------------------------------------------
     // The RPC server
@@ -257,7 +191,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
      * `fetch` with an unconstrained requirement channel, so an unprovided
      * service inside `fetch` would *not* be a type error — it would be a
      * runtime failure. Naming the requirements here restores that check: if a
-     * handler or middleware layer is missing, this line stops compiling.
+     * handler, a middleware layer or a *domain service* layer is missing, this
+     * line stops compiling. Drop `ServicesLayer` below and see for yourself —
+     * `Projects` and `Profile` show up in the requirement channel immediately.
      */
     const rpcServer: Effect.Effect<
       Effect.Effect<HttpServerResponse.HttpServerResponse, never, Scope.Scope | HttpServerRequest>,
@@ -265,7 +201,11 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       Scope.Scope | RuntimeContext
     > = RpcServer.toHttpEffect(AppRpcs).pipe(
       Effect.provide(
-        Layer.mergeAll(HandlersLayer, AuthMiddlewareLayer, RpcSerialization.layerJson),
+        Layer.mergeAll(
+          HandlersLayer.pipe(Layer.provide(ServicesLayer)),
+          AuthMiddlewareLayer,
+          RpcSerialization.layerJson,
+        ),
       ),
     );
 

@@ -72,10 +72,13 @@ Website worker (TanStack Start SSR)
          forwards the ORIGINAL Request unchanged         ▼
 Backend worker (Effect, workersDev: false)
   ├── /api/auth/* → Better Auth  → D1 (owns user/session/account/verification)
-  └── /rpc        → Effect RPC   → Drizzle → D1 (owns app tables)
+  └── /rpc        → Effect RPC   ─┐
+                                  ▼
+                     Domain services: Projects, Profile
+                       → Drizzle → D1 (owns app tables)
 ```
 
-Five things a forker has to understand before changing anything.
+Six things a forker has to understand before changing anything.
 
 **One data layer, and it is TanStack Start.** Route loaders read, server
 functions write, `router.invalidate()` refreshes. Everything that touches the
@@ -93,10 +96,10 @@ Auth's React client runs in the browser and needs it. Same URL, same `Host`,
 same `Cookie`. That is what makes auth same-origin — the
 session cookie is first-party, there is no CORS, and Better Auth derives its own
 base URL and CSRF origin from the incoming headers. Which is why `baseURL` and
-`trustedOrigins` are deliberately unset in `src/backend/api.ts`: setting them
+`trustedOrigins` are deliberately unset in `src/backend/auth.ts`: setting them
 would require the backend to know the Website's URL, and the Website already
 binds the backend, so that is a dependency cycle. Read the "Public origin"
-comment block in `src/backend/api.ts` before you touch this. If you reconstruct
+comment block in `src/backend/auth.ts` before you touch this. If you reconstruct
 the request or strip headers, sessions stop resolving.
 
 **Two migrators, one D1.** Better Auth owns `user`, `session`, `account` and
@@ -119,12 +122,24 @@ which is the visible signal that it is public. The session lands in route
 context, so children read `Route.useRouteContext().user` instead of re-fetching.
 
 **Tenant scoping lives in the SQL.** Every projects query in
-`src/backend/api.ts` filters on `eq(projects.ownerId, user.id)`, and the handler
-gets `user` from `CurrentUser` — provided by the auth middleware, never from the
-client payload. Delete uses `and(eq(projects.id, id), eq(projects.ownerId,
-user.id))` so "not found" and "not yours" are indistinguishable to the caller.
-Copy that shape for every entity you add. A post-filter in TypeScript, or a
-helper a future handler forgets to call, is how tenants leak.
+`src/backend/projects.ts` filters on `eq(projects.ownerId, ownerId)`, and the
+handler gets that id from `CurrentUser` — provided by the auth middleware, never
+from the client payload. Delete uses `and(eq(projects.id, id),
+eq(projects.ownerId, ownerId))` so "not found" and "not yours" are
+indistinguishable to the caller. Copy that shape for every entity you add. A
+post-filter in TypeScript, or a helper a future method forgets to call, is how
+tenants leak.
+
+**Logic lives in services; RPC is just a transport.** `src/backend/projects.ts`
+and `src/backend/profile.ts` are plain Effect services holding all the Drizzle
+and Better Auth work. The RPC handlers in `src/backend/api.ts` are adapters:
+resolve the caller with `yield* CurrentUser`, hand the id to a service, return.
+Services **never** reach for `CurrentUser` — the actor is an explicit argument
+(`projects.list(ownerId)`), which is exactly what lets a public REST/OpenAPI
+surface be added later as a third branch in the backend's `fetch` dispatch
+rather than a second copy of the logic. `src/backend/domain.ts` holds the
+entities and the domain errors, so any transport can map them; `AGENTS.md` has
+the full layering note and a recipe for the public API.
 
 ## Quickstart
 
@@ -232,7 +247,7 @@ If you want it in the header, add the path to the `AppPath` union and a
 
 ### …add an RPC procedure
 
-Three edits, in this order — the type errors walk you through it.
+Four edits, in this order — the type errors walk you through it.
 
 1. **Declare it** in `src/backend/rpc.ts`, inside `RpcGroup.make(...)`. Note the
    `.middleware(AuthMiddleware)` at the end of the group: it applies to every
@@ -248,11 +263,19 @@ Three edits, in this order — the type errors walk you through it.
    }),
    ```
 
-2. **Implement it** in the `AppRpcs.toLayer({ … })` object in
-   `src/backend/api.ts`. Use `Effect.fn("name")`, get the caller from
-   `CurrentUser`, and scope the SQL by `ownerId`.
+2. **Implement the logic** as a method on the relevant service —
+   `src/backend/projects.ts` here. Add it to the service interface, take the
+   actor as the first argument (`ownerId: string`), and scope the SQL by it.
+   Domain errors go in `src/backend/domain.ts`, next to `ProjectNotFound`.
+   Never `yield* CurrentUser` in a service: that tag comes from the RPC
+   middleware, and a service that depends on it cannot be reused by anything
+   else.
 
-3. **Expose it** in `src/server/api.ts` as a `createServerFn`. Give a write a
+3. **Adapt it** in the `AppRpcs.toLayer(...)` handlers in `src/backend/api.ts`.
+   Three lines: `Effect.fn("name")`, `const user = yield* CurrentUser`,
+   `return yield* projects.rename(user.id, payload)`.
+
+4. **Expose it** in `src/server/api.ts` as a `createServerFn`. Give a write a
    `.validator(Schema.toStandardSchemaV1(RenameProjectPayload))` using the same
    payload schema the contract declares, and wrap any `Schema.Class` result in
    `plain(...)` so seroval can serialize it. A read goes in a route `loader`; a
@@ -282,10 +305,10 @@ the CLI and editor tooling.
 ### …add an OAuth provider
 
 Better Auth options pass straight through `BetterAuth({ … })` in
-`src/backend/api.ts`, so it is `socialProviders`:
+`src/backend/auth.ts`, so it is `socialProviders`:
 
 ```ts
-const auth = yield* BetterAuth({
+BetterAuth({
   basePath: "/api/auth",
   emailAndPassword: { … },
   socialProviders: {
@@ -309,7 +332,7 @@ goes and the proxy forwards it verbatim. On the client, add a button that calls
 
 ### …wire real email
 
-Two `TODO(email)` sites in `src/backend/api.ts`, and that is all:
+Two `TODO(email)` sites in `src/backend/auth.ts`, and that is all:
 `emailAndPassword.sendResetPassword` and
 `emailVerification.sendVerificationEmail`. Both currently `console.log` the link
 so a fresh fork runs offline. Replace them with your provider — Cloudflare Email
@@ -342,11 +365,13 @@ Projects is the example. To make it yours, in order:
 1. `src/db/schema.ts` — rename the table and its index, then `bun run db:generate`.
    (In a fresh fork with no deployed data, delete the generated `migrations/`
    directory first so you get one clean initial migration.)
-2. `src/backend/rpc.ts` — rename the `Project` class, `ProjectNotFound`, and the
-   three `Rpc.make` declarations.
-3. `src/backend/api.ts` — rename the handlers; keep the `ownerId` filters.
-4. `src/server/api.ts` — rename the server functions.
-5. `src/routes/_app/app/dashboard.tsx` — the page.
+2. `src/backend/domain.ts` — rename the `Project` class and `ProjectNotFound`.
+3. `src/backend/projects.ts` — rename the service and its methods; keep the
+   `ownerId` filters in the SQL.
+4. `src/backend/rpc.ts` — rename the three `Rpc.make` declarations and payloads.
+5. `src/backend/api.ts` — rename the handlers (three lines each).
+6. `src/server/api.ts` — rename the server functions.
+7. `src/routes/_app/app/dashboard.tsx` — the page.
 
 `bun run check` tells you when you are done.
 
@@ -359,11 +384,16 @@ vite.config.ts              StyleX before React; Alchemy adds its own CF plugin.
 migrations/                 Generated SQL. Commit it. (Absent until first generate.)
 src/
   backend/
-    api.ts                  The Backend worker: path dispatch, Better Auth, auth
-                            middleware, RPC handlers, the RPC server.
+    api.ts                  The Backend worker + composition root: path dispatch,
+                            auth middleware, thin RPC handlers, the RPC server.
+    projects.ts             Projects service. The logic. Actor is an argument.
+    profile.ts              Profile service (Better Auth owns the user table).
+    domain.ts               Entities + domain errors. No server-only imports.
+    auth.ts                 Better Auth config + the `Auth` service tag.
     rpc.ts                  The shared contract. No server-only imports — the
                             browser imports this same module.
-    database.ts             The D1 database + Drizzle schema resource.
+    database.ts             The D1 database + Drizzle schema resource, and the
+                            `Database` service tag over the Drizzle handle.
   db/schema.ts              App tables only. Read the ownership note at the top.
   server/
     rpc.ts                  Server-only RPC client over env.BACKEND + RpcResult.
@@ -434,7 +464,8 @@ Alchemy's Worker type accepts a `fetch` with an unconstrained requirement
 channel, so a missing service inside `fetch` is not a type error — it is a
 runtime failure in production. The explicit
 `Effect.Effect<…, never, Scope.Scope | RuntimeContext>` annotation restores the
-check: if a handler or middleware layer is missing, that line stops compiling.
+check: if a handler, a middleware layer or a domain service layer is missing,
+that line stops compiling.
 
 **The RPC client posts to `/rpc/`, with a trailing slash.** It issues
 `post("")` against the configured base URL and `HttpClientRequest.prependUrl`

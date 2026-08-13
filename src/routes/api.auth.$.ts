@@ -9,7 +9,7 @@
  * base URL — and therefore its cookie domain and CSRF origin check — from the
  * incoming `Host`/`Origin` headers, because `alchemy.run.ts` cannot tell the
  * backend the Website's public URL without creating a binding cycle. See the
- * "Public origin" comment in `src/backend/api.ts`.
+ * "Public origin" comment in `src/backend/auth.ts`.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "cloudflare:workers";

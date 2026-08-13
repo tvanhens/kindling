@@ -39,6 +39,91 @@ Also standard in v4 and used throughout this repo: `Effect.gen` for sequencing,
 improves stack traces — do not `.pipe` an `Effect.fn`, pass combinators as extra
 arguments), and `Schema.TaggedError` for errors that cross the wire.
 
+## The backend is layered: services, then transports
+
+Domain logic lives in transport-agnostic Effect services. The RPC group is one
+transport over them, not the place the logic lives.
+
+```
+src/backend/domain.ts     entities + domain errors (no server-only imports)
+src/backend/projects.ts   Projects service  ─┐  the real logic: Drizzle, Better
+src/backend/profile.ts    Profile  service  ─┤  Auth. Depend on Database / Auth,
+                                             │  never on a transport.
+                                             ├── src/backend/rpc.ts + the
+                                             │   handlers in api.ts — internal
+                                             │   transport, free to change
+                                             └── (future) a public HttpApi
+```
+
+**The rule that makes this worth anything: a service never reaches for
+transport context.** The actor is an explicit argument —
+`projects.list(ownerId)`, `projects.remove(ownerId, id)`. `CurrentUser` is
+provided by the _RPC middleware_; a service that yielded it would be unusable
+from anything else. Resolving the actor is the transport's job, and in
+`src/backend/api.ts` that is literally one line per handler:
+
+```ts
+listProjects: Effect.fn("listProjects")(function* () {
+  const user = yield* CurrentUser;
+  return yield* projects.list(user.id);
+}),
+```
+
+`Profile` is the one place the actor is a `Headers` credential rather than an
+id: Better Auth owns the `user` table and identifies the subject of
+`auth.api.updateUser` from the request credentials. It is still an argument,
+which is the property that matters — the bearer plugin puts a token in the same
+header bag.
+
+`src/backend/api.ts` is the composition root: it builds `auth` and the Drizzle
+handle in the Worker's init phase, publishes them as `Auth` and `Database`, and
+provides `Projects.layer` / `Profile.layer` to the handlers. Effect 4 services
+have **no** generated `.Default` and **no** `dependencies` option — each service
+writes out `static readonly layer = Layer.effect(...)` and declares its
+requirements in the layer's type.
+
+Domain errors live with the domain. `ProjectNotFound` is in `domain.ts` because
+`Projects.remove` raises it and every transport has to map it. `Unauthorized`
+stays in `rpc.ts` because no service can raise it — it is a fact about the RPC
+auth middleware.
+
+### Adding a public REST/OpenAPI API later
+
+This is deliberately _not_ built. When you need it, it is a third branch in the
+`fetch` dispatch in `src/backend/api.ts`, provided the same `ServicesLayer`:
+
+```
+if (path.startsWith("/v1")) return yield* yield* publicApi;
+```
+
+where `publicApi` is built the same way `rpcServer` is —
+`HttpRouter.toHttpEffect(appLayer)`, with
+`HttpApiBuilder.layer(api, { openapiPath: "/v1/openapi.json" })` and
+`HttpApiScalar.layer({ path: "/v1/docs" })` in the layer. All of that is in core
+`effect` under `effect/unstable/httpapi` — **no new dependencies**. Give the new
+effect the same explicit `Effect.Effect<…, never, Scope.Scope | RuntimeContext>`
+annotation `rpcServer` has, for the same reason.
+
+Four decisions to get right, all of them cheap now and expensive later:
+
+1. **Separate DTO schemas.** Do not reuse `Project` / `User` from `domain.ts` in
+   the public contract. An internal schema changes when the domain does; a
+   public schema is a compatibility commitment to strangers. Write
+   `src/backend/public/v1/schemas.ts` and map explicitly, even when the two are
+   identical on day one. That mapping is where "we added a column" stops being
+   "we changed your API".
+2. **Version from the first endpoint.** `/v1` in the path from the very first
+   route. Adding `/v2` later is routine; retrofitting a version onto unversioned
+   URLs is not.
+3. **Bearer/API-key auth, not cookies.** The session cookie is for the browser.
+   Add Better Auth's `bearer` (and/or `apiKey`) plugin in `src/backend/auth.ts`
+   and declare `HttpApiSecurity.bearer` on the API, implemented as an
+   `HttpApiMiddleware` that resolves the token to a user id — the public
+   equivalent of `AuthMiddleware`. Then call the same services with that id.
+4. **Handlers stay thin.** If a public handler needs logic that is not in a
+   service, that logic is in the wrong place. Move it into the service and let
+   the RPC handler benefit too.
+
 ## Invariants you must not break
 
 Each of these is explained at length in a comment at the site. Read the comment
@@ -71,22 +156,31 @@ ask.
    `src/server/rpc.ts` calls the binding itself and forwards the `Cookie`
    header and the incoming origin by hand.
 
-5. **Tenant scoping stays in the SQL.** `eq(projects.ownerId, user.id)` in the
-   query itself; deletes use `and(eq(id), eq(ownerId))`. Identity comes from
-   `CurrentUser`, never from a client payload. Do not "simplify" this into a
-   post-filter or a shared helper that a handler can forget to call.
+5. **Tenant scoping stays in the SQL.** `eq(projects.ownerId, ownerId)` in the
+   query itself, inside `src/backend/projects.ts`; deletes use
+   `and(eq(id), eq(ownerId))`. The `ownerId` handed to the service comes from
+   `CurrentUser` in the handler, never from a client payload. Do not "simplify"
+   this into a post-filter or a shared helper that a method can forget to call.
 
-6. **`src/backend/rpc.ts` has no server-only imports.** It is imported by the
-   Website Worker as well as the backend one. The single
-   `import type { RuntimeContext }` is erased at compile time; a value import of
-   `alchemy/*`, `better-auth` or `drizzle-orm` there breaks the Website build.
+6. **Domain services take the actor as an argument.** Never `yield* CurrentUser`
+   (or `HttpServerRequest`) inside `src/backend/projects.ts` /
+   `src/backend/profile.ts` — see the layering section above. Breaking this is
+   how a future public API ends up duplicating the logic.
 
-7. **`*.stylex.ts` files contain only `defineVars`/`defineConsts` exports.** A
+7. **`src/backend/rpc.ts` and `src/backend/domain.ts` have no server-only
+   imports.** Both reach the Website Worker as well as the backend one (`rpc.ts`
+   re-exports `domain.ts`). The single `import type { RuntimeContext }` is
+   erased at compile time; a value import of `alchemy/*`, `better-auth` or
+   `drizzle-orm` there breaks the Website build. It is also why the domain types
+   and errors sit in `domain.ts` rather than in `projects.ts`, which imports
+   Drizzle.
+
+8. **`*.stylex.ts` files contain only `defineVars`/`defineConsts` exports.** A
    type, helper or constant in one of those files breaks the build for the whole
    app. Never put a `className` next to a `stylex.props()` spread on the same
    element. See `src/styles/README.md`.
 
-8. **No new dependencies without asking.** The dependency list is short on
+9. **No new dependencies without asking.** The dependency list is short on
    purpose: no ESLint, no Prettier, no commitlint, no husky, no test framework.
    `effect` and the `@effect/platform-*` packages are pinned and must be
    bumped in lockstep; `@effect/platform-bun`,
@@ -162,16 +256,18 @@ look exactly like one.
 
 ## Where to look
 
-| Question                       | File                                                                    |
-| ------------------------------ | ----------------------------------------------------------------------- |
-| How are the two Workers wired? | `alchemy.run.ts`, `src/backend/api.ts`                                  |
-| What does the API look like?   | `src/backend/rpc.ts` (the shared contract)                              |
-| How do I add a table?          | `src/db/schema.ts`, `src/backend/database.ts`                           |
-| How does the browser get data? | `src/server/api.ts` (loaders + server fns), `src/server/rpc.ts`         |
-| How does auth work end to end? | `src/routes/_app.tsx`, `src/routes/api.auth.$.ts`, `src/backend/api.ts` |
-| Styling rules                  | `src/styles/README.md`                                                  |
-| Lint configuration and why     | `.oxlintrc.json` (it is commented)                                      |
-| Commit message rules           | `CONTRIBUTING.md`, `scripts/check-commit-message.sh`                    |
+| Question                       | File                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| How are the two Workers wired? | `alchemy.run.ts`, `src/backend/api.ts`                                   |
+| What does the API look like?   | `src/backend/rpc.ts` (the shared contract)                               |
+| Where is the actual logic?     | `src/backend/projects.ts`, `src/backend/profile.ts`                      |
+| Where are the domain types?    | `src/backend/domain.ts`                                                  |
+| How do I add a table?          | `src/db/schema.ts`, `src/backend/database.ts`                            |
+| How does the browser get data? | `src/server/api.ts` (loaders + server fns), `src/server/rpc.ts`          |
+| How does auth work end to end? | `src/routes/_app.tsx`, `src/routes/api.auth.$.ts`, `src/backend/auth.ts` |
+| Styling rules                  | `src/styles/README.md`                                                   |
+| Lint configuration and why     | `.oxlintrc.json` (it is commented)                                       |
+| Commit message rules           | `CONTRIBUTING.md`, `scripts/check-commit-message.sh`                     |
 
 The code comments in this repo are the design documentation — they record why a
 thing is the way it is, not what it does. When you change code with a comment
