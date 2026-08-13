@@ -16,6 +16,24 @@ import { breakpoint } from "~/styles/breakpoints.stylex";
 import { color, font, motion, radius, space } from "~/styles/tokens.stylex";
 import { useColorScheme } from "./theme";
 
+/**
+ * The mark's own ember ramp.
+ *
+ * Deliberately literal rather than StyleX tokens: the identical geometry also
+ * ships as a standalone `public/favicon.svg`, where no stylesheet exists to
+ * resolve a custom property. One hard pair of values in both places means the
+ * mark can never drift between the tab and the header.
+ *
+ * Note these are the *logo's* orange (#FF6A00 → #FFA32B), which is brighter
+ * than the UI accent in `tokens.stylex.ts`. See the note in
+ * src/styles/README.md before reconciling them.
+ */
+const EMBER_DEEP = "#FF6A00";
+const EMBER_LIGHT = "#FFA32B";
+
+/** Stable id so the gradient resolves even with several marks on one page. */
+const GRADIENT_ID = "kindling-mark-ember";
+
 const styles = stylex.create({
   page: {
     backgroundColor: color.backdrop,
@@ -63,15 +81,10 @@ const styles = stylex.create({
     outlineStyle: { default: "none", ":focus-visible": "solid" },
     outlineWidth: 2,
   },
-  flame: {
-    borderRadius: radius.pill,
-    placeItems: "center",
-    backgroundColor: color.primary,
-    color: color.onAccent,
-    display: "grid",
-    fontSize: font.sizeSm,
-    height: 28,
-    width: 28,
+  mark: {
+    display: "block",
+    height: 26,
+    width: 26,
   },
   navLink: {
     borderRadius: radius.md,
@@ -163,14 +176,64 @@ export function Container({
   );
 }
 
+/**
+ * The Kindling mark: a four-pointed spark held inside a hexagon.
+ *
+ * Both shapes carry the same ember ramp, so the mark is one colour idea rather
+ * than a container plus a contrasting fill. That is also why it needs no
+ * light/dark variant — the orange holds on white and on black alike, unlike an
+ * ink-based mark which has to flip.
+ *
+ * Keep in step with `public/favicon.svg`, which carries identical geometry.
+ * Both are generated from a parametric study; adjust the parameters there
+ * rather than editing these paths by hand.
+ */
+export function KindlingMark({ style }: { style?: StyleXStyles }) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      aria-hidden="true"
+      focusable="false"
+      {...stylex.props(styles.mark, style)}
+    >
+      <defs>
+        {/* `userSpaceOnUse`, not the default object bounding box: the stroked
+            hexagon and the filled star have different boxes, so a relative
+            gradient would run at a different angle on each and the two shapes
+            would not share one light source. */}
+        <linearGradient
+          id={GRADIENT_ID}
+          gradientUnits="userSpaceOnUse"
+          x1="12"
+          y1="56"
+          x2="52"
+          y2="8"
+        >
+          <stop offset="0" stopColor={EMBER_DEEP} />
+          <stop offset="1" stopColor={EMBER_LIGHT} />
+        </linearGradient>
+      </defs>
+      <path
+        fill="none"
+        stroke={`url(#${GRADIENT_ID})`}
+        strokeWidth="5.5"
+        strokeLinejoin="round"
+        d="M37.20 11.75Q32.00 8.75 26.80 11.75L17.06 17.38Q11.86 20.38 11.86 26.38L11.86 37.63Q11.86 43.63 17.06 46.63L26.80 52.25Q32.00 55.25 37.20 52.25L46.94 46.63Q52.14 43.63 52.14 37.63L52.14 26.38Q52.14 20.38 46.94 17.38Z"
+      />
+      <path
+        fill={`url(#${GRADIENT_ID})`}
+        d="M32 17Q34.31 28.7 42.5 32Q34.31 35.3 32 47Q29.69 35.3 21.5 32Q29.69 28.7 32 17Z"
+      />
+    </svg>
+  );
+}
+
 /** The Kindling wordmark, always a link home. */
 export function Wordmark() {
   return (
     <Link to="/" {...stylex.props(styles.wordmark)}>
-      <span aria-hidden="true" {...stylex.props(styles.flame)}>
-        ▲
-      </span>
-      Kindling
+      <KindlingMark />
+      kindling
     </Link>
   );
 }

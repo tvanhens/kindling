@@ -61,13 +61,20 @@ export const Route = createRootRoute({
       },
       { name: "color-scheme", content: "light dark" },
     ],
-    // In dev, StyleX's compiled rules are served from a virtual endpoint rather
-    // than written into the CSS asset above: the unplugin only appends them in
-    // `generateBundle`/`writeBundle`, which are build-only hooks. It normally
-    // injects this link through `transformIndexHtml`, but TanStack Start has no
-    // static index.html — this document *is* the shell — so we add it here.
-    // Production needs nothing: the rules land in the built asset.
-    links: import.meta.env.DEV ? [{ rel: "stylesheet", href: "/virtual:stylex.css" }] : [],
+    links: [
+      // Declaring this stops the browser's reflexive request for /favicon.ico,
+      // which is where the 404 in the console came from. One SVG covers every
+      // size and adapts to light/dark chrome; see public/favicon.svg.
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      // In dev, StyleX's compiled rules are served from a virtual endpoint
+      // rather than written into the CSS asset above: the unplugin only appends
+      // them in `generateBundle`/`writeBundle`, which are build-only hooks. It
+      // normally injects this link through `transformIndexHtml`, but TanStack
+      // Start has no static index.html — this document *is* the shell — so we
+      // add it here. Production needs nothing: the rules land in the built
+      // asset.
+      ...(import.meta.env.DEV ? [{ rel: "stylesheet", href: "/virtual:stylex.css" } as const] : []),
+    ],
   }),
   shellComponent: RootDocument,
   component: RootComponent,
