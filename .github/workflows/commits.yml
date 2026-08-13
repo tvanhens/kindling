@@ -1,0 +1,37 @@
+name: Commits
+
+# jj has no hooks and cannot run git hooks, so commit-message conventions
+# cannot be enforced locally. This workflow is the actual enforcement point.
+# Locally, `bun run commits:lint` (or `jj lint-commits`) runs the same script.
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commits-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conventional-commits:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      # Full history so the merge base with the target branch is available.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # No jj on the runner: the script auto-detects and uses the git backend.
+      - name: Validate commit messages
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
+        run: |
+          set -euo pipefail
+          base="${BASE_REF#refs/heads/}"
+          git fetch --quiet origin "$base"
+          echo "Validating commits in origin/${base}..HEAD"
+          ./scripts/check-commit-messages.sh --git "origin/${base}..HEAD"

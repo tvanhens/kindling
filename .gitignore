@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# alchemy state + build artifacts
+.alchemy/
+dist/
+.output/
+.vinxi/
+.tanstack/
+
+# local drizzle build output
+.drizzle/
+
+# env
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# editor / os
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/

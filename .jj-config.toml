@@ -1,0 +1,105 @@
+#:schema https://docs.jj-vcs.dev/latest/config-schema.json
+#
+# Kindling — optional jj (Jujutsu) configuration.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS FILE IS OPT-IN
+# ---------------------------------------------------------------------------
+# jj deliberately does NOT read configuration from the repository's working
+# copy. Per-repo config lives OUTSIDE the repo, at the path printed by:
+#
+#     jj config path --repo
+#     # e.g. ~/.config/jj/repos/<hash>/config.toml
+#
+# so it can never be committed. jj also has NO hooks of any kind — no
+# commit-msg, no pre-push — and it does not run git hooks even in a colocated
+# repo. husky / lefthook / pre-commit are therefore useless here, and
+# `jj fix` only rewrites file contents, so it cannot validate commit messages.
+#
+# => GitHub Actions is the only real enforcement (.github/workflows/commits.yml).
+#    Everything in this file is a local convenience you choose to adopt.
+#
+# ---------------------------------------------------------------------------
+# HOW TO ADOPT IT (pick one)
+# ---------------------------------------------------------------------------
+# 1. Recommended — merge it into this repo's own jj config (affects only this
+#    repo, survives across shells):
+#
+#        mkdir -p "$(dirname "$(jj config path --repo)")"
+#        cat .jj-config.toml >> "$(jj config path --repo)"
+#
+# 2. Try it for a single command, without installing anything:
+#
+#        jj --config-file=.jj-config.toml describe
+#
+#    or for a whole shell session:
+#
+#        export JJ_CONFIG="$(jj config path --user):$PWD/.jj-config.toml"
+#
+# 3. User-wide but scoped to this checkout — copy into your conf.d and add a
+#    condition so it only applies here:
+#
+#        cp .jj-config.toml ~/.config/jj/conf.d/kindling.toml
+#        # then add as the FIRST line of that copy:
+#        #   --when.repositories = ["/absolute/path/to/kindling"]
+#
+# Re-run any of these after editing this file; nothing auto-syncs.
+# ---------------------------------------------------------------------------
+
+# Guidance shown in the editor when you run `jj describe` / `jj commit` with no
+# `-m`. Lines starting with `JJ:` are stripped from the final message.
+# NOTE: `-m` bypasses the editor entirely, so this never fires for `jj -m`.
+[templates]
+draft_commit_description = '''
+concat(
+  coalesce(description, default_commit_description),
+  surround(
+    "\nJJ: This commit contains the following changes:\n", "",
+    indent("JJ:     ", diff.stat(72)),
+  ),
+  "\nJJ: ",
+  "\nJJ: Conventional Commits — <type>[optional scope][!]: <description>",
+  "\nJJ: ",
+  "\nJJ:   types:  build chore ci docs feat fix perf refactor revert style test",
+  "\nJJ:   scope:  optional, lowercase, e.g. (auth) (db) (ui) (deps)",
+  "\nJJ:   !:      marks a breaking change, e.g. feat(api)!: ...",
+  "\nJJ:   subject: imperative mood, no trailing period, <= 72 chars",
+  "\nJJ: ",
+  "\nJJ:   feat(auth): add passkey login",
+  "\nJJ:   fix(db): correct migration ordering",
+  "\nJJ:   chore(deps): bump drizzle-orm",
+  "\nJJ: ",
+  "\nJJ: Validate with: jj lint-commits",
+  "\nJJ: ",
+)
+'''
+
+# NOTE: aliases are only picked up from config FILES that jj loads for itself
+# (repo config, user config, JJ_CONFIG). A one-off `jj --config-file=...` does
+# NOT register aliases, so use adoption option 1 or 2 above for these.
+[aliases]
+# Validate every commit between trunk and the working copy.
+#   jj lint-commits            # default revset: trunk()..@
+#   jj lint-commits 'main::@'  # explicit revset
+lint-commits = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  'exec "$JJ_WORKSPACE_ROOT/scripts/check-commit-messages.sh" "$@"',
+  "jj lint-commits",
+]
+
+# Validate one message, then set it on @ only if it is valid.
+#   jj describe-checked "feat(auth): add passkey login"
+describe-checked = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+msg="${1:?usage: jj describe-checked CONVENTIONAL_COMMIT_MESSAGE}"
+"$JJ_WORKSPACE_ROOT/scripts/check-commit-message.sh" "$msg"
+printf '%s' "$msg" | jj describe --stdin
+''', "jj describe-checked"]
+
+[revset-aliases]
+# Commits you have written that are not yet on trunk — the set CI will judge.
+"unpushed" = "trunk()..@ ~ empty()"

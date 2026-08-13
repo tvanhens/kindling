@@ -1,0 +1,91 @@
+/**
+ * StyleX CSS entrypoint.
+ *
+ * Import this once from the client entry (e.g. `src/routes/__root.tsx`):
+ *
+ *   import "~/styles/app.css";
+ *
+ * The Vite plugin appends every compiled StyleX rule to the CSS asset produced
+ * from this file, so a CSS entrypoint must exist and must be imported exactly
+ * once. With `useCSSLayers: true` those rules arrive as `@layer priority1..N`
+ * blocks appended *after* everything below.
+ *
+ * That append-at-the-end behaviour is what makes the reset safe: because
+ * `@layer reset` is declared here first, it sorts below every StyleX layer, so
+ * a component style always beats the reset without needing specificity hacks.
+ *
+ * (Older StyleX integrations wanted a literal `@stylex;` directive here. The
+ * 0.19 unplugin does not read it -- it only makes lightningcss log
+ * "Unknown at rule: @stylex" on every build -- so it is intentionally absent.)
+ */
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  figure,
+  blockquote,
+  dl,
+  dd {
+    margin: 0;
+  }
+
+  ul[role="list"],
+  ol[role="list"] {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  img,
+  picture,
+  svg,
+  video,
+  canvas {
+    display: block;
+    max-width: 100%;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    color: inherit;
+    font: inherit;
+  }
+
+  :where(a) {
+    color: inherit;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

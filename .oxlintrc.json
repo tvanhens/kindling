@@ -1,0 +1,115 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  // NOTE: setting `plugins` REPLACES the oxlint defaults, so the four defaults
+  // (eslint, typescript, unicorn, oxc) must be relisted alongside the additions.
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y", "import", "promise"],
+
+  // StyleX ships an ESLint plugin; oxlint runs it through its JS plugin bridge.
+  // The rule namespace is the package SCOPE (`@stylexjs/...`), not `stylexjs/...`.
+  // JS plugins cannot provide type-aware rules — none of the StyleX rules need it.
+  "jsPlugins": ["@stylexjs/eslint-plugin"],
+
+  // Only `correctness` is enabled by oxlint out of the box. `suspicious` is
+  // cheap signal, so it runs as warnings.
+  //
+  // Type-aware linting (typescript-eslint's type-checked rules) is available via
+  // `oxlint-tsgolint` + `"options": { "typeAware": true }` and requires TS 7,
+  // which this repo has. It is intentionally NOT installed: it is an extra
+  // dependency and a much slower lint pass. Add it if the Effect-heavy code
+  // starts wanting no-floating-promises / no-misused-promises.
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+
+  "rules": {
+    // --- React 19 ---------------------------------------------------------
+    // The new JSX transform means React need not be in scope.
+    "react/react-in-jsx-scope": "off",
+    // React Compiler / RC-era codebases still benefit from these.
+    "react/jsx-key": "error",
+    "react/no-children-prop": "error",
+    "react/no-danger-with-children": "error",
+    "react/no-direct-mutation-state": "error",
+    "react/void-dom-elements-no-children": "error",
+
+    // --- TypeScript -------------------------------------------------------
+    "typescript/no-explicit-any": "warn",
+    "typescript/consistent-type-imports": "warn",
+    "typescript/no-import-type-side-effects": "warn",
+    "typescript/no-non-null-assertion": "warn",
+
+    // --- Imports ----------------------------------------------------------
+    "import/no-duplicates": "warn",
+    "import/no-self-import": "error",
+    "import/no-cycle": "off",
+    // Side-effect imports are how stylesheets enter the bundle; the StyleX CSS
+    // entrypoint in __root.tsx is exactly that and has nothing to bind to.
+    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }],
+
+    // --- Promises ---------------------------------------------------------
+    "promise/no-return-wrap": "error",
+    "promise/param-names": "error",
+
+    // --- Unicorn: tone down the opinionated ones --------------------------
+    "unicorn/filename-case": "off",
+    "unicorn/no-null": "off",
+    "unicorn/prefer-top-level-await": "off",
+
+    // False positive on `@stylexjs/unplugin`: `vite` is a property of the
+    // default export, not a named export, so the suggested rewrite does not
+    // typecheck. The rule has no per-module allowlist, so it is off.
+    "import/no-named-as-default-member": "off",
+
+    // --- Style: formatting is oxfmt's job, not the linter's ---------------
+    "eslint/no-console": "warn",
+    "eslint/no-debugger": "error",
+    "eslint/eqeqeq": ["warn", "always", { "null": "ignore" }],
+
+    // --- StyleX -----------------------------------------------------------
+    "@stylexjs/valid-styles": "error",
+    "@stylexjs/no-unused": "error",
+    "@stylexjs/no-conflicting-props": "error",
+    "@stylexjs/no-legacy-contextual-styles": "error",
+    "@stylexjs/valid-shorthands": "warn",
+    "@stylexjs/sort-keys": "warn"
+  },
+
+  "overrides": [
+    {
+      // Infrastructure + tooling code runs in Node/Workers, not the browser,
+      // and legitimately logs.
+      "files": [
+        "alchemy.run.ts",
+        "*.config.{ts,js,mts,mjs}",
+        "scripts/**",
+        "src/backend/**",
+        "src/db/**",
+        "drizzle.config.ts"
+      ],
+      "rules": {
+        "eslint/no-console": "off"
+      }
+    }
+  ],
+
+  "ignorePatterns": [
+    "node_modules",
+    ".alchemy",
+    ".output",
+    ".vinxi",
+    ".tanstack",
+    ".drizzle",
+    "dist",
+    "build",
+    "**/*.gen.ts",
+    "src/routeTree.gen.ts",
+    "worker-configuration.d.ts"
+  ]
+}

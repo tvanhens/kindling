@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: 1.3.10
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-${{ env.BUN_VERSION }}-
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-${{ env.BUN_VERSION }}-
+
+      # oxlint loads @stylexjs/eslint-plugin through its JS plugin bridge,
+      # so node_modules must be installed before linting.
+      - run: bun install --frozen-lockfile
+
+      - run: bun run lint
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-${{ env.BUN_VERSION }}-
+
+      - run: bun install --frozen-lockfile
+
+      # `oxfmt --check` exits 1 when anything is unformatted. Fix with `bun run fmt`.
+      - run: bun run fmt:check
+
+  # ---------------------------------------------------------------------------
+  # Deploy is intentionally NOT enabled. A fork has no Cloudflare credentials,
+  # so a deploy job would fail on every PR out of the box. To turn it on, add
+  # these repository secrets and uncomment the job below:
+  #
+  #   CLOUDFLARE_ACCOUNT_ID  - your Cloudflare account id
+  #   CLOUDFLARE_API_TOKEN   - a token with Workers Scripts:Edit (plus D1 / R2 /
+  #                            KV edit scopes for whatever bindings you declare)
+  #
+  # Alchemy also needs somewhere to keep its state; the default filesystem
+  # backend does not survive a CI runner, so configure a durable state store
+  # (e.g. ALCHEMY_STATE_TOKEN + the Cloudflare state store) before relying on it.
+  #
+  # deploy:
+  #   name: Deploy
+  #   needs: [typecheck, lint, format]
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   runs-on: ubuntu-latest
+  #   environment: production
+  #   concurrency:
+  #     group: deploy-production
+  #     cancel-in-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v5
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: ${{ env.BUN_VERSION }}
+  #     - run: bun install --frozen-lockfile
+  #     - run: bun run deploy
+  #       env:
+  #         CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  #         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  #         ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
