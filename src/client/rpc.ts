@@ -91,7 +91,27 @@ export const keys = {
  * each of these collapses back to a one-line `Rpc.query(...)` call.
  */
 const query = <A, E>(effect: Effect.Effect<A, E, Rpc>, reactivityKeys: ReadonlyArray<string>) =>
-  Atom.withReactivity(reactivityKeys)(Rpc.runtime.atom(effect));
+  Atom.withReactivity(reactivityKeys)(
+    // Query atoms deliberately do NOT run during SSR.
+    //
+    // The RPC client is configured with the relative URL `/rpc`, which has no
+    // origin to resolve against on the server, so running the effect there
+    // fails instantly. That failure is not harmless: the server would render
+    // the error Alert while the client's first render shows the pending state,
+    // and React aborts hydration with a mismatch ("server rendered HTML didn't
+    // match the client") and re-renders the whole tree.
+    //
+    // `Effect.never` leaves the atom pending on the server, which is exactly
+    // what the client renders on its first pass, so the two agree. The data
+    // then loads on the client. Nothing here is SEO-relevant — every query in
+    // this file is behind the auth guard, and the guard itself *is* resolved
+    // during SSR (see `_app.tsx`), so there is no flash of signed-out UI.
+    //
+    // If you ever need a query's data in the server-rendered HTML, do not just
+    // delete this: give the client an absolute URL for SSR and dehydrate the
+    // registry into the payload (`Hydration.dehydrate` / `ReactHydration`).
+    Rpc.runtime.atom(import.meta.env.SSR ? Effect.never : effect),
+  );
 
 /** The signed-in user, straight from the server. */
 export const currentUserAtom = query(
