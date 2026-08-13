@@ -3,6 +3,45 @@
 How to work in this repository. What the code does, and why it is shaped the way
 it is, lives in the code and its comments. Read those.
 
+## Delegate to subagents to keep the root context clean
+
+Anything that involves reading widely, iterating on a build, or exploring to
+find an answer should go to a subagent, which returns the conclusion instead of
+the search. The root agent's context is the scarce resource: it holds the thread
+of what is being built and why, and it degrades once it fills with file dumps
+and compiler output. Run independent subagents in parallel.
+
+## Give each implementing subagent its own jj workspace
+
+A subagent writing new functionality works in its own workspace, so several can
+run at once without overwriting each other's files:
+
+```bash
+jj workspace add --name <task> .claude/workspaces/<task>
+```
+
+Workspaces share one repository, so a commit made in one is immediately visible
+from all the others. There is nothing to push, pull or fetch between them.
+
+## Subagents do not merge their own work
+
+A subagent finishes by committing in its workspace and reporting the change id.
+The root agent integrates. Only the root agent has the whole picture, so it is
+the only one positioned to resolve a conflict between two subagents sensibly
+rather than by whoever happened to finish last.
+
+## Clean up workspaces after integrating
+
+```bash
+jj workspace forget <task>
+rm -rf .claude/workspaces/<task>
+```
+
+`forget` stops tracking the working copy but leaves its commits in the repo,
+which is what makes integration possible. Abandon anything that was not
+integrated (`jj abandon -r <change-id>`), or it stays as a stray head in the
+log.
+
 ## Check the local Effect docs before writing Effect code
 
 This repo runs Effect 4. Your training and effect.website both describe Effect
@@ -26,11 +65,6 @@ and read the console before claiming something works.
 "The types say this is wired correctly" and "I signed in and the request
 returned 200" are different claims. Say which one you are making, and say
 plainly when you could not verify something.
-
-## Do not add dependencies without asking
-
-The dependency list is short on purpose and every entry has a reason. Reach for
-what is already installed first.
 
 ## Restart the dev server after editing
 

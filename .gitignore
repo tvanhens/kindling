@@ -27,3 +27,6 @@ dist/
 # playwright mcp output
 .playwright-mcp/
 *.png
+
+# jj workspaces used by subagents
+.claude/workspaces/
