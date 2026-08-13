@@ -29,7 +29,7 @@ export const Route = createFileRoute("/(marketing)/docs")({
       {
         name: "description",
         content:
-          "The Kindling v1 REST API: projects endpoints, API key authentication, and an OpenAPI 3.1 specification you can generate clients from.",
+          "Reference for the Kindling v1 REST API: endpoints, API key authentication, and an OpenAPI 3.1 specification.",
       },
     ],
   }),
@@ -78,10 +78,10 @@ function DocsPage() {
             API reference
           </Heading>
           <Text tone="muted">
-            The <code>/v1</code> REST API, generated from the same contract the server implements —
-            so it cannot drift from the code. Authenticate with an API key from{" "}
+            The <code>/v1</code> REST API, generated from the same contract the handlers implement.
+            Authenticate with an API key created in{" "}
             <a href="/app/settings/api-keys" {...stylex.props(styles.link)}>
-              your settings
+              account settings
             </a>
             .
           </Text>

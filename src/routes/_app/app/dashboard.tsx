@@ -105,8 +105,8 @@ function DashboardPage() {
           Welcome back, {user.name}
         </Heading>
         <Text tone="muted">
-          Projects is the example entity: one table, one RPC group, one page. Copy the shape and
-          delete the word &ldquo;project&rdquo;.
+          Projects is the example entity: one table, one RPC group, one page. Use it as the pattern
+          for your own.
         </Text>
       </Stack>
 
@@ -141,7 +141,7 @@ function DashboardPage() {
                 <Stack align="center" gap="xs">
                   <Text weight="medium">No projects yet</Text>
                   <Text size="sm" tone="muted">
-                    Create your first one with the form alongside.
+                    Create one with the form alongside.
                   </Text>
                 </Stack>
               </div>
@@ -239,8 +239,8 @@ function CreateProjectForm() {
               New project
             </Heading>
             <Text size="sm" tone="muted">
-              Client-side validation stops at &ldquo;not empty&rdquo;. The schema in the RPC
-              contract is the real gate.
+              Validation here only checks for an empty name. The schema in the RPC contract is
+              authoritative.
             </Text>
           </Stack>
 

@@ -182,11 +182,11 @@ function MintedKeyPanel({ minted, onDismiss }: { minted: MintedKey; onDismiss: (
   };
 
   return (
-    <Alert tone="warning" title={`Copy “${minted.name}” now — it will not be shown again`}>
+    <Alert tone="warning" title={`Copy “${minted.name}” now. It will not be shown again.`}>
       <Stack gap="md">
         <Text size="sm">
-          This is the only time the full key is visible. We store a hash of it, so nobody — not even
-          us — can show it to you later. Lose it and you mint a new one.
+          This is the only time the full key is visible. Only a hash is stored, so it cannot be
+          retrieved later. If you lose it, create a new one.
         </Text>
         <code {...stylex.props(styles.secret)}>{minted.secret}</code>
         <Row gap="sm">
@@ -256,7 +256,8 @@ function CreateKeyForm({ onMinted }: { onMinted: (minted: MintedKey) => void }) 
               New key
             </Heading>
             <Text size="sm" tone="muted">
-              A key acts as you. It can read and write everything the API exposes for your account.
+              A key has the same access you do. It can read and write any data the API exposes for
+              your account.
             </Text>
           </Stack>
 

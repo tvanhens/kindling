@@ -346,7 +346,7 @@ export function SiteFooter() {
           </Row>
           <Text size="sm" tone="muted">
             Kindling is a template. Replace this footer, the copy above it and the pricing table
-            with your own — the plumbing underneath is what you forked it for.
+            with your own.
           </Text>
         </Stack>
       </Container>

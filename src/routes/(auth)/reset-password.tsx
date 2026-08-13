@@ -110,7 +110,7 @@ function RequestReset({ linkError }: { linkError: string | undefined }) {
           <Field
             label="Email"
             error={emailError}
-            hint="You will get a link that signs you in long enough to pick a new password."
+            hint="We will email you a link to set a new password."
             required
           >
             <Input
@@ -129,9 +129,9 @@ function RequestReset({ linkError }: { linkError: string | undefined }) {
           </Button>
 
           <Alert tone="info" title="Running locally?">
-            No email provider is configured yet. The reset URL is printed to the dev server output
-            as `[auth] password reset for …` — paste it into the address bar to continue. Wire a
-            real provider at the TODO(email) marker in `src/backend/auth.ts`.
+            No email provider is configured. The reset URL is printed to the dev server output as
+            `[auth] password reset for …`. Paste it into the address bar to continue, and configure
+            a provider at the TODO(email) marker in `src/backend/auth.ts`.
           </Alert>
         </Stack>
       </form>

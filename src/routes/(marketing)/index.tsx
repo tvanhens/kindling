@@ -9,11 +9,11 @@ import { color, font, radius, space } from "~/styles/tokens.stylex";
 export const Route = createFileRoute("/(marketing)/")({
   head: () => ({
     meta: [
-      { title: "Kindling — an opinionated launchpad for Cloudflare" },
+      { title: "Kindling — a Cloudflare application template" },
       {
         name: "description",
         content:
-          "SSR, typed end-to-end RPC, session auth and a D1 database, wired together across two Workers and deployable with one command.",
+          "A Cloudflare template with server rendering, session authentication, a D1 database, a typed internal API and a documented public REST API.",
       },
     ],
   }),
@@ -129,48 +129,48 @@ const styles = stylex.create({
 const features = [
   {
     title: "Two Workers, one origin",
-    body: "A public SSR Worker and a private backend joined by a service binding. The browser only ever talks to your own origin, so session cookies stay first-party and CORS never enters the picture.",
+    body: "A public SSR Worker and a private backend Worker, connected by a service binding. The browser only calls your own origin, so session cookies stay first-party and there is no CORS configuration to maintain.",
   },
   {
     title: "One domain, two transports",
-    body: "Business logic lives in services that no transport owns. The internal RPC contract and the public REST API are both thin adapters over them, so a rule written once holds on both.",
+    body: "Business logic lives in services that are independent of any transport. The internal RPC contract and the public REST API are both adapters over those services, so a rule written once applies to both.",
   },
   {
-    title: "Session auth, already wired",
-    body: "Better Auth with email and password, backed by D1 through Drizzle. Sign-up, sign-in, sign-out and password reset are implemented pages, not a TODO list.",
+    title: "Session authentication",
+    body: "Better Auth with email and password, stored in D1. Sign-up, sign-in, sign-out, password reset and profile management are implemented.",
   },
   {
-    title: "Guarded by construction",
-    body: "Protected pages are children of a single layout route whose beforeLoad resolves the session during SSR. You cannot add a page to the signed-in area and forget the check.",
+    title: "Protected routes",
+    body: "Protected pages sit under one layout route that resolves the session during server rendering. Any page added to the signed-in area inherits the check.",
   },
   {
-    title: "A design system, not a CSS file",
-    body: "StyleX atoms compiled at build time: zero runtime, no class collisions, themeable tokens, and a set of primitives that already handle focus rings and label wiring.",
+    title: "A design system",
+    body: "StyleX compiles styles at build time: no runtime cost, no class collisions, themeable tokens, and primitives that handle focus states and label association.",
   },
   {
-    title: "Infrastructure as code you can read",
-    body: "Alchemy describes the Workers, the D1 database and the bindings in TypeScript that lives next to the app. One command plans it, one deploys it.",
+    title: "Infrastructure as code",
+    body: "Alchemy defines the Workers, the D1 database and their bindings in TypeScript alongside the application code. One command previews changes, another applies them.",
   },
 ] as const;
 
 const apiPoints = [
-  "API keys minted and revoked from the signed-in settings page, hashed at rest and shown once.",
-  "Public response shapes kept separate from the internal domain, so renaming a column is not a breaking change for anyone integrating.",
-  "Every endpoint scoped to the key's owner in SQL — not found and not yours are the same answer.",
+  "Keys are created and revoked in account settings. They are hashed at rest and shown once, at creation.",
+  "Public response types are declared separately from internal ones, so changes to the domain do not alter the published contract.",
+  "Every query is scoped to the key owner in SQL. A request for another account's record returns 404.",
 ] as const;
 
 const steps = [
   {
     title: "Fork it",
-    body: "Clone the template and install. Every dependency is deliberate; the list is short enough to audit in a sitting.",
+    body: "Clone the repository and install. The dependency list is short and every entry has a stated purpose.",
   },
   {
     title: "Rename the domain",
-    body: "Projects is the worked example: one table, one RPC group, one CRUD page. Copy its shape for whatever you are actually building.",
+    body: "Projects is the example entity: one table, one RPC group, one page. Use it as the pattern for your own.",
   },
   {
     title: "Deploy",
-    body: "`bun run deploy` provisions the database, applies migrations, builds the client and ships both Workers.",
+    body: "bun run deploy provisions the database, applies migrations, builds the client and deploys both Workers.",
   },
 ] as const;
 
@@ -187,12 +187,12 @@ function HomePage() {
             <span {...stylex.props(styles.eyebrow)}>Cloudflare launchpad</span>
           </Row>
           <Heading level={1} as="h1">
-            Stop rebuilding the first two weeks of every project.
+            Auth, a database and a typed API on Cloudflare.
           </Heading>
           <Text size="lg" tone="muted">
-            Kindling is the boring part, finished: server rendering, a typed API, real sessions and
-            a database — wired together, deployed to Cloudflare in one command, and small enough
-            that you can read all of it.
+            A template for building applications on Cloudflare. It includes server rendering,
+            session authentication, a D1 database, a typed internal API and a documented public one.
+            Deploy it with a single command.
           </Text>
           <Row gap="md" wrap>
             {user === null ? (
@@ -217,9 +217,9 @@ function HomePage() {
         <Container style={styles.section}>
           <Stack gap="xxl">
             <Stack gap="sm">
-              <Heading level={2}>What you get on day one</Heading>
+              <Heading level={2}>What is included</Heading>
               <Text size="lg" tone="muted">
-                Six decisions already made, each one you would otherwise spend an afternoon on.
+                Six pieces of setup that are already done.
               </Text>
             </Stack>
             <div {...stylex.props(styles.grid)}>
@@ -243,11 +243,11 @@ function HomePage() {
       <Container style={styles.section}>
         <div {...stylex.props(styles.apiLayout)}>
           <Stack gap="lg">
-            <Heading level={2}>Your product ships with an API</Heading>
+            <Heading level={2}>A documented REST API</Heading>
             <Text size="lg" tone="muted">
-              Not a plan for one. <code>/v1</code> is live from the first deploy: key
-              authentication, per-key rate limits, and an OpenAPI 3.1 document generated from the
-              same contract the handlers implement — so the reference cannot drift from the code.
+              The <code>/v1</code> API is available from the first deploy. It authenticates with API
+              keys, applies a per-key rate limit, and publishes an OpenAPI 3.1 document generated
+              from the same contract the handlers implement.
             </Text>
             <Stack gap="sm">
               {apiPoints.map((point) => (
@@ -287,9 +287,9 @@ function HomePage() {
       <Container style={styles.section}>
         <Stack gap="xxl">
           <Stack gap="sm">
-            <Heading level={2}>From clone to production</Heading>
+            <Heading level={2}>Getting started</Heading>
             <Text size="lg" tone="muted">
-              Three steps, and none of them involve a dashboard.
+              Three steps, all from the command line.
             </Text>
           </Stack>
           <div {...stylex.props(styles.steps)}>
@@ -313,11 +313,11 @@ function HomePage() {
       <Container style={styles.section}>
         <div {...stylex.props(styles.ctaBand)}>
           <Stack align="center" gap="lg">
-            <Heading level={3}>Ready when you are</Heading>
+            <Heading level={3}>Get started</Heading>
             <Text size="lg" tone="muted">
               {user === null
-                ? "Create an account and look around the signed-in app — it is the same code you will be editing five minutes from now."
-                : "You are signed in. The app below is the same code you will be editing five minutes from now."}
+                ? "Create an account to see the signed-in application."
+                : "Your dashboard is ready."}
             </Text>
             <Row gap="md" wrap justify="center">
               {user === null ? (

@@ -37,7 +37,7 @@ function ProfilePage() {
         <Heading level={4} as="h2">
           Profile
         </Heading>
-        <Text tone="muted">Your account details, and the password you sign in with.</Text>
+        <Text tone="muted">Your account details and sign-in password.</Text>
       </Stack>
       {currentUser._tag === "Failure" ? (
         <Alert tone="danger" title="Could not load your account">

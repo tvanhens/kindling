@@ -128,8 +128,8 @@ function RegisterPage() {
           </Button>
 
           <Text size="xs" tone="subtle">
-            Email verification is disabled in this template and outbound email is stubbed to
-            `console.log` — see the TODO(email) markers in `src/backend/auth.ts`.
+            Email verification is disabled in this template and outbound email is written to
+            `console.log`. See the TODO(email) markers in `src/backend/auth.ts`.
           </Text>
         </Stack>
       </form>

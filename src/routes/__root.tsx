@@ -53,11 +53,11 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Kindling — ship on Cloudflare, today" },
+      { title: "Kindling" },
       {
         name: "description",
         content:
-          "Kindling is an opinionated launchpad for products on Cloudflare: SSR, typed RPC, auth and a database, wired together and deployable in one command.",
+          "A Cloudflare application template with server rendering, session authentication, a D1 database and a documented REST API.",
       },
       { name: "color-scheme", content: "light dark" },
     ],

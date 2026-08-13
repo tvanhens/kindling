@@ -12,8 +12,7 @@ export const Route = createFileRoute("/(marketing)/pricing")({
       { title: "Pricing — Kindling" },
       {
         name: "description",
-        content:
-          "Three plans, no seat maths. Start free, upgrade when the project turns into a product.",
+        content: "Three plans. Start free and upgrade when you need to.",
       },
     ],
   }),
@@ -109,7 +108,7 @@ const plans: ReadonlyArray<Plan> = [
     name: "Hobby",
     price: "$0",
     cadence: "forever",
-    summary: "For the weekend build that might become something.",
+    summary: "For side projects and prototypes.",
     features: [
       "One project",
       "Community support",
@@ -124,7 +123,7 @@ const plans: ReadonlyArray<Plan> = [
     name: "Team",
     price: "$24",
     cadence: "per month",
-    summary: "For the point where other people depend on it.",
+    summary: "For applications with active users.",
     features: [
       "Unlimited projects",
       "Email support, one business day",
@@ -140,7 +139,7 @@ const plans: ReadonlyArray<Plan> = [
     name: "Enterprise",
     price: "Let's talk",
     cadence: "annual",
-    summary: "For procurement, compliance and a signature.",
+    summary: "For organisations with procurement and compliance requirements.",
     features: [
       "Everything in Team",
       "SSO and SCIM provisioning",
@@ -157,22 +156,22 @@ const faqs = [
   {
     question: "Is this a real price list?",
     answer:
-      "No. It is the shape of one. Kindling ships no billing integration — swap this table for your provider's and the surrounding page still works.",
+      "No. This page is a layout, not a billing integration. Replace the table with your provider's and the rest of the page still works.",
   },
   {
     question: "What does it cost to run?",
     answer:
-      "Whatever Cloudflare charges you. Two Workers and a D1 database sit inside the free tier for a long time; you deploy into your own account, so there is no markup in between.",
+      "Whatever Cloudflare charges you. Two Workers and a D1 database fit within the free tier at low volume, and you deploy into your own account, so nothing is added on top.",
   },
   {
     question: "Can I change the stack?",
     answer:
-      "Every choice is one file. The RPC contract, the auth configuration, the database schema and the infrastructure each live in a single readable module.",
+      "Each concern is one file. The RPC contract, the auth configuration, the database schema and the infrastructure definition each live in a single module.",
   },
   {
     question: "Do I have to use the design system?",
     answer:
-      "No, but it is doing more than it looks: focus rings, label wiring and live regions are already correct, and it is themed in light and dark.",
+      "No, but focus states, label association and live regions are already handled, and both light and dark themes are defined.",
   },
 ] as const;
 
