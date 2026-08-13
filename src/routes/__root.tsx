@@ -52,6 +52,13 @@ export const Route = createRootRoute({
       },
       { name: "color-scheme", content: "light dark" },
     ],
+    // In dev, StyleX's compiled rules are served from a virtual endpoint rather
+    // than written into the CSS asset above: the unplugin only appends them in
+    // `generateBundle`/`writeBundle`, which are build-only hooks. It normally
+    // injects this link through `transformIndexHtml`, but TanStack Start has no
+    // static index.html — this document *is* the shell — so we add it here.
+    // Production needs nothing: the rules land in the built asset.
+    links: import.meta.env.DEV ? [{ rel: "stylesheet", href: "/virtual:stylex.css" }] : [],
   }),
   shellComponent: RootDocument,
   component: RootComponent,

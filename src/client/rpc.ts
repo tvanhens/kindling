@@ -15,6 +15,8 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRpc from "effect/unstable/reactivity/AtomRpc";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
@@ -36,9 +38,18 @@ export class Rpc extends AtomRpc.Service<Rpc>()("kindling/client/Rpc", {
   // JSON over HTTP. `RpcSerialization.layerJson` must match the server's
   // serialization in `src/backend/api.ts`, and `layerProtocolHttp` must point at
   // the proxy route, never at the backend Worker directly.
-  protocol: RpcClient.layerProtocolHttp({ url: "/rpc" }).pipe(
-    Layer.provide([FetchHttpClient.layer, RpcSerialization.layerJson]),
-  ),
+  protocol: RpcClient.layerProtocolHttp({
+    url: "/rpc",
+    // The client issues `post("")` against the base URL, which resolves to
+    // `/rpc/` — with a trailing slash. TanStack Start normalizes trailing
+    // slashes away when matching server routes, so `/rpc/` never matches the
+    // `/rpc` proxy: every call 404s and surfaces as the *very* misleading
+    // "RpcClientDefect: Error decoding HTTP response" (the client parsing a 404
+    // HTML page as JSON). Strip it here so the request matches the route.
+    transformClient: HttpClient.mapRequest((request) =>
+      HttpClientRequest.setUrl(request, request.url.replace(/\/+$/, "")),
+    ),
+  }).pipe(Layer.provide([FetchHttpClient.layer, RpcSerialization.layerJson])),
 }) {}
 
 /**

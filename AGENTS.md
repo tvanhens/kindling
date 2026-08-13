@@ -139,6 +139,24 @@ internal and easy to get wrong (it wants `headers: []` — an array of pairs —
 and a single request object, not an array). Drive the UI, or build a client
 from `AppRpcs` with `RpcClient.make`.
 
+### The service binding goes stale after a hot reload
+
+`alchemy dev` watches and restarts the workers on edit, but the Website's
+service binding to the backend does **not** survive the backend restarting.
+Symptom: every proxied request returns `503` with
+
+```
+Worker "kindling-backend-dev-…" not found. Make sure the worker is running locally.
+```
+
+Diagnose it by comparing the two ports — the backend on `:1337` answers `200`
+while the same request through `:1338` gives `503`. That means the backend is
+healthy and only the binding is dead.
+
+There is no fix in this repo; it is an Alchemy local-dev limitation. **Restart
+`alchemy dev`.** Do not go looking for a bug in the auth or RPC code — it will
+look exactly like one.
+
 ## Where to look
 
 | Question                           | File                                                                    |
