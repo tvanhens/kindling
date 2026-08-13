@@ -27,21 +27,6 @@ const styles = stylex.create({
   heroCopy: {
     maxWidth: 720,
   },
-  eyebrow: {
-    borderColor: color.primaryBorder,
-    borderRadius: radius.pill,
-    borderStyle: "solid",
-    borderWidth: 1,
-    paddingBlock: space.xxs,
-    paddingInline: space.md,
-    backgroundColor: color.primarySubtle,
-    color: color.primaryText,
-    fontFamily: font.sans,
-    fontSize: font.sizeXs,
-    fontWeight: font.weightMedium,
-    letterSpacing: font.trackingWide,
-    textTransform: "uppercase",
-  },
   terminal: {
     borderColor: color.border,
     borderRadius: radius.lg,
@@ -114,6 +99,33 @@ const styles = stylex.create({
     fontSize: font.sizeSm,
     lineHeight: font.lineRelaxed,
   },
+  // Deliberately lighter than the feature cards: this section is reference, not
+  // pitch, and should read as a list rather than compete with the value props.
+  stackGrid: {
+    gap: 0,
+    display: "grid",
+    gridTemplateColumns: {
+      default: "1fr",
+      [breakpoint.sm]: "repeat(2, minmax(0, 1fr))",
+      [breakpoint.lg]: "repeat(3, minmax(0, 1fr))",
+    },
+  },
+  stackItem: {
+    paddingBlock: space.lg,
+    borderBlockStartColor: color.border,
+    borderBlockStartStyle: "solid",
+    borderBlockStartWidth: 1,
+    paddingInlineEnd: space.lg,
+  },
+  stackName: {
+    color: color.text,
+    fontFamily: font.mono,
+    fontSize: font.sizeSm,
+    fontWeight: font.weightMedium,
+  },
+  stepCommand: {
+    marginBlockStart: space.xs,
+  },
   ctaBand: {
     borderColor: color.border,
     borderRadius: radius.xl,
@@ -128,29 +140,46 @@ const styles = stylex.create({
 
 const features = [
   {
-    title: "Two Workers, one origin",
-    body: "A public SSR Worker and a private backend Worker, connected by a service binding. The browser only calls your own origin, so session cookies stay first-party and there is no CORS configuration to maintain.",
+    title: "Accounts and sessions",
+    body: "Sign-up, sign-in, sign-out, password reset and profile management are built and working. Email verification is implemented and switched off until you add a provider.",
   },
   {
-    title: "One domain, two transports",
-    body: "Business logic lives in services that are independent of any transport. The internal RPC contract and the public REST API are both adapters over those services, so a rule written once applies to both.",
+    title: "Private areas stay private",
+    body: "Signed-in pages resolve the session on the server before anything renders, so protected content is never briefly visible to someone who should not see it.",
   },
   {
-    title: "Session authentication",
-    body: "Better Auth with email and password, stored in D1. Sign-up, sign-in, sign-out, password reset and profile management are implemented.",
+    title: "A database with migrations",
+    body: "A SQL database with a typed schema, generated migrations and a worked example entity to copy. Applied automatically as part of deployment.",
   },
   {
-    title: "Protected routes",
-    body: "Protected pages sit under one layout route that resolves the session during server rendering. Any page added to the signed-in area inherits the check.",
+    title: "Breakage caught at build time",
+    body: "The browser and the server share one definition of every request and response. Change a field and the build fails, instead of a request failing for a customer.",
   },
   {
-    title: "A design system",
-    body: "StyleX compiles styles at build time: no runtime cost, no class collisions, themeable tokens, and primitives that handle focus states and label association.",
+    title: "An accessible interface",
+    body: "Light and dark themes, form controls with correct labelling and focus states, and error handling that is announced to screen readers.",
   },
   {
-    title: "Infrastructure as code",
-    body: "Alchemy defines the Workers, the D1 database and their bindings in TypeScript alongside the application code. One command previews changes, another applies them.",
+    title: "One command to deploy",
+    body: "Provisioning the database, applying migrations, building the client and deploying both Workers is a single command. No dashboard steps.",
   },
+] as const;
+
+/**
+ * Surface-level only. The point of this section is to let someone decide
+ * whether the stack is one they want to work in, not to explain how it fits
+ * together — the README does that.
+ */
+const stack = [
+  { name: "Cloudflare Workers", role: "Hosting and compute" },
+  { name: "D1", role: "SQLite database" },
+  { name: "TanStack Start", role: "Routing and server rendering" },
+  { name: "Better Auth", role: "Sessions and API keys" },
+  { name: "Effect", role: "Services, typed RPC and the API contract" },
+  { name: "Drizzle", role: "Schema and migrations" },
+  { name: "StyleX", role: "Styles compiled at build time" },
+  { name: "Alchemy", role: "Infrastructure defined in TypeScript" },
+  { name: "Bun", role: "Runtime, package manager and test runner" },
 ] as const;
 
 const apiPoints = [
@@ -162,15 +191,16 @@ const apiPoints = [
 const steps = [
   {
     title: "Fork it",
-    body: "Clone the repository and install. The dependency list is short and every entry has a stated purpose.",
+    body: "Clone the repository and install. The dependency list is short and every entry has a stated reason, so the whole thing can be read in an afternoon.",
   },
   {
-    title: "Rename the domain",
-    body: "Projects is the example entity: one table, one RPC group, one page. Use it as the pattern for your own.",
+    title: "Prompt it",
+    body: "Point a coding agent at the repository. AGENTS.md records the invariants, the patterns worth copying and the library versions that differ from what a model already knows.",
   },
   {
-    title: "Deploy",
-    body: "bun run deploy provisions the database, applies migrations, builds the client and deploys both Workers.",
+    title: "Ship it",
+    body: "One command provisions the database, applies migrations, builds the client and deploys both Workers.",
+    command: "bun run deploy",
   },
 ] as const;
 
@@ -183,9 +213,6 @@ function HomePage() {
     <MarketingLayout>
       <Container style={styles.hero}>
         <Stack gap="xl" style={styles.heroCopy}>
-          <Row>
-            <span {...stylex.props(styles.eyebrow)}>Cloudflare launchpad</span>
-          </Row>
           <Heading level={1} as="h1">
             Auth, a database and a typed API on Cloudflare.
           </Heading>
@@ -219,7 +246,7 @@ function HomePage() {
             <Stack gap="sm">
               <Heading level={2}>What is included</Heading>
               <Text size="lg" tone="muted">
-                Six pieces of setup that are already done.
+                Six things you would otherwise build before writing a feature.
               </Text>
             </Stack>
             <div {...stylex.props(styles.grid)}>
@@ -284,12 +311,38 @@ function HomePage() {
         </div>
       </Container>
 
+      <div {...stylex.props(styles.sectionAlt)}>
+        <Container style={styles.section}>
+          <Stack gap="xl">
+            <Stack gap="sm">
+              <Heading level={2}>The stack</Heading>
+              <Text size="lg" tone="muted">
+                What the template is built on. The README lists every dependency with the reason it
+                was chosen.
+              </Text>
+            </Stack>
+            <div {...stylex.props(styles.stackGrid)}>
+              {stack.map((item) => (
+                <div key={item.name} {...stylex.props(styles.stackItem)}>
+                  <Stack gap="xxs">
+                    <span {...stylex.props(styles.stackName)}>{item.name}</span>
+                    <Text size="sm" tone="muted">
+                      {item.role}
+                    </Text>
+                  </Stack>
+                </div>
+              ))}
+            </div>
+          </Stack>
+        </Container>
+      </div>
+
       <Container style={styles.section}>
         <Stack gap="xxl">
           <Stack gap="sm">
             <Heading level={2}>Getting started</Heading>
             <Text size="lg" tone="muted">
-              Three steps, all from the command line.
+              Fork it, hand it to an agent, deploy it.
             </Text>
           </Stack>
           <div {...stylex.props(styles.steps)}>
@@ -304,6 +357,14 @@ function HomePage() {
                 <Text size="sm" tone="muted">
                   {step.body}
                 </Text>
+                {"command" in step ? (
+                  <div {...stylex.props(styles.terminal, styles.stepCommand)}>
+                    <span aria-hidden="true" {...stylex.props(styles.prompt)}>
+                      ${" "}
+                    </span>
+                    {step.command}
+                  </div>
+                ) : null}
               </Stack>
             ))}
           </div>
