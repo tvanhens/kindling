@@ -70,25 +70,12 @@ src/components/       UI primitives
 src/styles/           design tokens and themes
 ```
 
-## Worth knowing before you build on it
+## Going further
 
-**Effect 4 is a release candidate and Alchemy v2 is a beta.** Both are pinned
-deliberately. If you bump `effect`, bump the `@effect/platform-*` packages in
-the same commit; they share a version line.
-
-**Email is stubbed.** Verification links and password resets are written to the
-Worker console. Two `TODO(email)` markers in `src/backend/auth.ts` are where a
-provider goes. Do not ship without them.
-
-**Deploy-time behaviour has not been observed.** Local development exercises
-everything, and `alchemy plan` resolves the stack, but no deploy has been run
-against a real Cloudflare account. Check `/api/auth/get-session` and a
-signed-in request after your first one.
-
-[AGENTS.md](./AGENTS.md) covers the rest: the invariants worth not breaking, the
-Effect 4 API differences that will trip up anything trained on Effect 3, and the
-upstream quirks already worked around in this repo. Read it before making
-changes, whether you are a person or not.
+[AGENTS.md](./AGENTS.md) covers the invariants worth not breaking, the Effect 4
+API differences that will trip up anything trained on Effect 3, the upstream
+quirks already worked around here, and the parts of the template that are not
+finished. Read it before making changes, whether you are a person or not.
 
 ## Contributing
 

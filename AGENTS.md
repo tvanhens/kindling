@@ -322,3 +322,9 @@ public origin through the service binding — is reasoned from the types and fro
 `alchemy plan`. It has **not** been observed against a real Cloudflare deploy.
 `bun run dev` exercises the local path. If you are asked to verify deploy
 behaviour, say what was actually run rather than asserting it works.
+
+Outbound email is stubbed. `requireEmailVerification` is `false` and both send
+functions write the link to the Worker console, so a fresh clone runs with no
+provider configured. The two `TODO(email)` markers in `src/backend/auth.ts` are
+where a real provider goes. Do not describe verification or password reset as
+finished until one is wired.
