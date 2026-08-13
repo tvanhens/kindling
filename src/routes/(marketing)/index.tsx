@@ -195,7 +195,7 @@ const steps = [
   },
   {
     title: "Prompt it",
-    body: "Point a coding agent at the repository. AGENTS.md records the invariants, the patterns worth copying and the library versions that differ from what a model already knows.",
+    body: "Point a coding agent at the repository. AGENTS.md sets out how to work in it, and the reasoning behind each decision sits in a comment beside the code it explains.",
   },
   {
     title: "Ship it",
