@@ -9,6 +9,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
 import { Link, useRouteContext } from "@tanstack/react-router";
+import type { LinkProps } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { Box, Button, Card, Heading, Row, Stack, Text } from "~/components";
@@ -238,14 +239,20 @@ export function Wordmark() {
   );
 }
 
-/** A link styled as a button. `to` is type-checked against the route tree. */
+/**
+ * A link styled as a button.
+ *
+ * `to` is the router's own path union rather than a hand-written list, so
+ * adding a route makes it available here automatically instead of failing to
+ * compile until someone remembers to extend this type.
+ */
 export function ActionLink({
   children,
   to,
   variant = "primary",
 }: {
   children: ReactNode;
-  to: "/" | "/pricing" | "/login" | "/register" | "/app/dashboard";
+  to: NonNullable<LinkProps["to"]>;
   variant?: "primary" | "secondary";
 }) {
   return (
@@ -295,6 +302,9 @@ export function SiteHeader() {
         <Row justify="between" paddingY="md">
           <Wordmark />
           <Row gap="xs">
+            <Link to="/docs" {...stylex.props(styles.navLink)}>
+              Docs
+            </Link>
             <Link to="/pricing" {...stylex.props(styles.navLink)}>
               Pricing
             </Link>

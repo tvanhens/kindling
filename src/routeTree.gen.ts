@@ -14,6 +14,7 @@ import { Route as authLoginRouteImport } from './routes/(auth)/login'
 import { Route as authRegisterRouteImport } from './routes/(auth)/register'
 import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-password'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as marketingDocsRouteImport } from './routes/(marketing)/docs'
 import { Route as marketingPricingRouteImport } from './routes/(marketing)/pricing'
 import { Route as V1SplatRouteImport } from './routes/v1.$'
 import { Route as AppAppDashboardRouteImport } from './routes/_app/app/dashboard'
@@ -44,6 +45,11 @@ const authResetPasswordRoute = authResetPasswordRouteImport.update({
 const marketingIndexRoute = marketingIndexRouteImport.update({
   id: '/(marketing)/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const marketingDocsRoute = marketingDocsRouteImport.update({
+  id: '/(marketing)/docs',
+  path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const marketingPricingRoute = marketingPricingRouteImport.update({
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof authLoginRoute
   '/register': typeof authRegisterRoute
   '/reset-password': typeof authResetPasswordRoute
+  '/docs': typeof marketingDocsRoute
   '/pricing': typeof marketingPricingRoute
   '/v1/$': typeof V1SplatRoute
   '/app/dashboard': typeof AppAppDashboardRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
   '/register': typeof authRegisterRoute
   '/reset-password': typeof authResetPasswordRoute
+  '/docs': typeof marketingDocsRoute
   '/pricing': typeof marketingPricingRoute
   '/v1/$': typeof V1SplatRoute
   '/app/dashboard': typeof AppAppDashboardRoute
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/(auth)/login': typeof authLoginRoute
   '/(auth)/register': typeof authRegisterRoute
   '/(auth)/reset-password': typeof authResetPasswordRoute
+  '/(marketing)/docs': typeof marketingDocsRoute
   '/(marketing)/pricing': typeof marketingPricingRoute
   '/v1/$': typeof V1SplatRoute
   '/(marketing)/': typeof marketingIndexRoute
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/docs'
     | '/pricing'
     | '/v1/$'
     | '/app/dashboard'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/docs'
     | '/pricing'
     | '/v1/$'
     | '/app/dashboard'
@@ -156,6 +167,7 @@ export interface FileRouteTypes {
     | '/(auth)/login'
     | '/(auth)/register'
     | '/(auth)/reset-password'
+    | '/(marketing)/docs'
     | '/(marketing)/pricing'
     | '/v1/$'
     | '/(marketing)/'
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   authLoginRoute: typeof authLoginRoute
   authRegisterRoute: typeof authRegisterRoute
   authResetPasswordRoute: typeof authResetPasswordRoute
+  marketingDocsRoute: typeof marketingDocsRoute
   marketingPricingRoute: typeof marketingPricingRoute
   V1SplatRoute: typeof V1SplatRoute
   marketingIndexRoute: typeof marketingIndexRoute
@@ -212,6 +225,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof marketingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/(marketing)/docs': {
+      id: '/(marketing)/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof marketingDocsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(marketing)/pricing': {
@@ -297,6 +317,7 @@ const rootRouteChildren: RootRouteChildren = {
   authLoginRoute: authLoginRoute,
   authRegisterRoute: authRegisterRoute,
   authResetPasswordRoute: authResetPasswordRoute,
+  marketingDocsRoute: marketingDocsRoute,
   marketingPricingRoute: marketingPricingRoute,
   V1SplatRoute: V1SplatRoute,
   marketingIndexRoute: marketingIndexRoute,

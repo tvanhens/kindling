@@ -93,6 +93,27 @@ const styles = stylex.create({
     height: 32,
     width: 32,
   },
+  apiLayout: {
+    gap: space.xxl,
+    alignItems: "center",
+    display: "grid",
+    gridTemplateColumns: { default: "1fr", [breakpoint.lg]: "1fr 1fr" },
+  },
+  apiTerminal: {
+    lineHeight: font.lineRelaxed,
+  },
+  indent: {
+    paddingInlineStart: space.lg,
+  },
+  response: {
+    color: color.textSubtle,
+  },
+  tick: {
+    color: color.primaryText,
+    fontFamily: font.mono,
+    fontSize: font.sizeSm,
+    lineHeight: font.lineRelaxed,
+  },
   ctaBand: {
     borderColor: color.border,
     borderRadius: radius.xl,
@@ -111,8 +132,8 @@ const features = [
     body: "A public SSR Worker and a private backend joined by a service binding. The browser only ever talks to your own origin, so session cookies stay first-party and CORS never enters the picture.",
   },
   {
-    title: "End-to-end typed RPC",
-    body: "One Effect RPC contract, imported by both the Worker and the browser bundle. Rename a procedure and the client stops compiling — there is no drift to discover in production.",
+    title: "One domain, two transports",
+    body: "Business logic lives in services that no transport owns. The internal RPC contract and the public REST API are both thin adapters over them, so a rule written once holds on both.",
   },
   {
     title: "Session auth, already wired",
@@ -130,6 +151,12 @@ const features = [
     title: "Infrastructure as code you can read",
     body: "Alchemy describes the Workers, the D1 database and the bindings in TypeScript that lives next to the app. One command plans it, one deploys it.",
   },
+] as const;
+
+const apiPoints = [
+  "API keys minted and revoked from the signed-in settings page, hashed at rest and shown once.",
+  "Public response shapes kept separate from the internal domain, so renaming a column is not a breaking change for anyone integrating.",
+  "Every endpoint scoped to the key's owner in SQL — not found and not yours are the same answer.",
 ] as const;
 
 const steps = [
@@ -212,6 +239,50 @@ function HomePage() {
           </Stack>
         </Container>
       </div>
+
+      <Container style={styles.section}>
+        <div {...stylex.props(styles.apiLayout)}>
+          <Stack gap="lg">
+            <Heading level={2}>Your product ships with an API</Heading>
+            <Text size="lg" tone="muted">
+              Not a plan for one. <code>/v1</code> is live from the first deploy: key
+              authentication, per-key rate limits, and an OpenAPI 3.1 document generated from the
+              same contract the handlers implement — so the reference cannot drift from the code.
+            </Text>
+            <Stack gap="sm">
+              {apiPoints.map((point) => (
+                <Row key={point} gap="sm" align="start">
+                  <span aria-hidden="true" {...stylex.props(styles.tick)}>
+                    →
+                  </span>
+                  <Text size="sm" tone="muted">
+                    {point}
+                  </Text>
+                </Row>
+              ))}
+            </Stack>
+            <Row gap="md" wrap>
+              <ActionLink to="/docs">Read the API reference</ActionLink>
+            </Row>
+          </Stack>
+
+          <div {...stylex.props(styles.terminal, styles.apiTerminal)}>
+            <div>
+              <span aria-hidden="true" {...stylex.props(styles.prompt)}>
+                ${" "}
+              </span>
+              curl -H &quot;Authorization: $KINDLING_KEY&quot; \
+            </div>
+            <div {...stylex.props(styles.indent)}>https://your-app.workers.dev/v1/projects</div>
+            <div {...stylex.props(styles.response)}>
+              {`[{"id":"9ada60e3…","name":"First Project",`}
+            </div>
+            <div {...stylex.props(styles.response)}>
+              {`  "createdAt":"2026-08-13T19:57:50.802Z"}]`}
+            </div>
+          </div>
+        </div>
+      </Container>
 
       <Container style={styles.section}>
         <Stack gap="xxl">
