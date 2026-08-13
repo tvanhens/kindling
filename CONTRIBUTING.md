@@ -212,7 +212,7 @@ There is no automated test suite in this template. If you add one, add a job to
 ## A few repo-specific rules
 
 Before sending a change, check it does not break one of these — they are load
-bearing and explained in [README.md](./README.md#architecture):
+bearing and explained at the site, and in [AGENTS.md](./AGENTS.md):
 
 - Better Auth's tables (`user`, `session`, `account`, `verification`) never
   appear in `src/db/schema.ts`.
