@@ -35,6 +35,17 @@ export const listProjects = createServerFn({ method: "GET" }).handler(() =>
   callBackend((client) => Effect.map(client.listProjects(undefined), (rows) => rows.map(plain))),
 );
 
+/**
+ * The caller's API keys — prefix and metadata only, never the secret.
+ *
+ * The secret exists exactly once, in the response to
+ * `authClient.apiKey.create` in the browser; nothing server-side can hand it
+ * back afterwards, because Better Auth stores a hash.
+ */
+export const listApiKeys = createServerFn({ method: "GET" }).handler(() =>
+  callBackend((client) => Effect.map(client.listApiKeys(undefined), (rows) => rows.map(plain))),
+);
+
 /** The signed-in user, straight from the backend. */
 export const getCurrentUser = createServerFn({ method: "GET" }).handler(() =>
   callBackend((client) => Effect.map(client.me(undefined), plain)),

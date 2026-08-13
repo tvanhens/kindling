@@ -7,8 +7,9 @@
  * of them reaches for `CurrentUser`, `HttpServerRequest`, or anything else a
  * transport happens to have lying around. `CurrentUser` is provided by the RPC
  * auth middleware, so a service that yielded it would only ever work over RPC.
- * A public HttpApi authenticating with a bearer token has no such tag — but it
- * can resolve a user id and call `projects.list(id)` just as well.
+ * The public HttpApi in `./public/v1/` has no such tag — it authenticates with
+ * an API key — but it resolves a user id and calls `projects.list(id)` just as
+ * well. That is the whole payoff.
  *
  * The consequence is that *the caller* is responsible for proving who the actor
  * is. In `./api.ts` that is one line per handler (`yield* CurrentUser`), and it
@@ -38,6 +39,18 @@ export class Projects extends Context.Service<
     readonly list: (
       ownerId: string,
     ) => Effect.Effect<ReadonlyArray<Project>, never, RuntimeContext>;
+
+    /**
+     * One of `ownerId`'s projects.
+     *
+     * Added for the public API's `GET /v1/projects/:id`; it is a service
+     * method rather than a query in the handler because that is where the
+     * tenant scoping lives. The RPC transport is free to use it too.
+     */
+    readonly get: (
+      ownerId: string,
+      id: string,
+    ) => Effect.Effect<Project, ProjectNotFound, RuntimeContext>;
 
     /** Create a project owned by `ownerId`. */
     readonly create: (
@@ -78,6 +91,22 @@ export class Projects extends Context.Service<
         return rows.map((row) => new Project(row));
       }, Effect.orDie);
 
+      const get = Effect.fn("Projects.get")(function* (ownerId: string, id: string) {
+        // `and(eq(id), eq(ownerId))` again: another tenant's project is
+        // indistinguishable from one that does not exist.
+        const [row] = yield* db
+          .select()
+          .from(projects)
+          .where(and(eq(projects.id, id), eq(projects.ownerId, ownerId)))
+          .limit(1)
+          .pipe(Effect.orDie);
+
+        if (row === undefined) {
+          return yield* new ProjectNotFound({ id });
+        }
+        return new Project(row);
+      });
+
       const create = Effect.fn("Projects.create")(function* (
         ownerId: string,
         input: CreateProject,
@@ -117,7 +146,7 @@ export class Projects extends Context.Service<
         return row.id;
       });
 
-      return Projects.of({ list, create, remove });
+      return Projects.of({ list, get, create, remove });
     }),
   );
 }

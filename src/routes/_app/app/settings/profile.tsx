@@ -33,7 +33,8 @@ function ProfilePage() {
   return (
     <Stack gap="xxl">
       <Stack gap="xs">
-        <Heading level={3} as="h1">
+        {/* h2: the settings layout owns the page's h1. */}
+        <Heading level={4} as="h2">
           Profile
         </Heading>
         <Text tone="muted">Your account details, and the password you sign in with.</Text>

@@ -5,15 +5,23 @@ import type { RuntimeContext } from "alchemy/RuntimeContext";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
+import type * as HttpServerError from "effect/unstable/http/HttpServerError";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServer from "effect/unstable/http/HttpServer";
 import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiScalar from "effect/unstable/httpapi/HttpApiScalar";
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import { relations } from "../db/schema.ts";
+import { ApiKeys } from "./apiKeys.ts";
 import { Auth, makeAuth } from "./auth.ts";
 import { AppDatabase, Database } from "./database.ts";
 import { Profile } from "./profile.ts";
 import { Projects } from "./projects.ts";
+import { PublicApi } from "./public/v1/api.ts";
+import { ApiKeyAuthLayer, ProjectsApiHandlers } from "./public/v1/handlers.ts";
 import { AppRpcs, AuthMiddleware, CurrentUser, Unauthorized, User } from "./rpc.ts";
 
 /**
@@ -24,7 +32,8 @@ import { AppRpcs, AuthMiddleware, CurrentUser, Unauthorized, User } from "./rpc.
  * Better Auth routes. Here `fetch` dispatches on the path instead:
  *
  *   /api/auth/*  ->  Better Auth
- *   /rpc         ->  the Effect RPC server
+ *   /rpc         ->  the Effect RPC server (internal, session-authenticated)
+ *   /v1/*        ->  the public REST API + OpenAPI/Scalar docs (API key)
  *   *            ->  404
  *
  * The Worker is private (`workersDev: false`); the browser reaches it through
@@ -43,9 +52,9 @@ import { AppRpcs, AuthMiddleware, CurrentUser, Unauthorized, User } from "./rpc.
  *   AppRpcs handlers (here)       internal transport; `yield* CurrentUser`,
  *                                 then call the service
  *
- * Adding a public REST/OpenAPI surface later is a third branch in the `fetch`
- * dispatch below, provided the same service layers — not a second copy of the
- * logic. See the "Adding a public API" section in AGENTS.md.
+ * The public REST surface is the third branch in the `fetch` dispatch below.
+ * It is provided the same `ServicesLayer` — not a second copy of the logic —
+ * and differs only in how it establishes the actor: `./public/v1/`.
  */
 export default class Backend extends Cloudflare.Worker<Backend>()(
   "Backend",
@@ -74,11 +83,13 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
      *
      * `Projects.layer` and `Profile.layer` declare what they need (`Database`,
      * `Auth`) and nothing about how this Worker was built; this is the single
-     * place the two halves meet. A future public-API branch provides the very
+     * place the two halves meet. The public-API branch below provides the very
      * same `ServicesLayer`.
      */
-    const ServicesLayer = Layer.mergeAll(Projects.layer, Profile.layer).pipe(
-      Layer.provide([Layer.succeed(Database, db), Layer.succeed(Auth, auth)]),
+    const AuthLayer = Layer.succeed(Auth, auth);
+
+    const ServicesLayer = Layer.mergeAll(Projects.layer, Profile.layer, ApiKeys.layer).pipe(
+      Layer.provide([Layer.succeed(Database, db), AuthLayer]),
     );
 
     // -----------------------------------------------------------------------
@@ -137,9 +148,16 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       Effect.gen(function* () {
         const projects = yield* Projects;
         const profile = yield* Profile;
+        const apiKeys = yield* ApiKeys;
 
         return {
           me: () => CurrentUser,
+
+          listApiKeys: Effect.fn("listApiKeys")(function* (_payload, { headers }) {
+            // Better Auth scopes the list by the session in these credentials —
+            // the same reason `updateProfile` passes headers rather than an id.
+            return yield* apiKeys.list(new Headers({ ...headers }));
+          }),
 
           updateProfile: Effect.fn("updateProfile")(function* (payload, { headers }) {
             // `headers` is Effect's immutable record; Better Auth wants the DOM
@@ -210,6 +228,58 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     );
 
     // -----------------------------------------------------------------------
+    // The public REST API
+    // -----------------------------------------------------------------------
+
+    /**
+     * Builds the `/v1` handler: the REST endpoints, the OpenAPI document and
+     * the Scalar docs page.
+     *
+     * The whole point of this branch is that it is *additive*. It provides the
+     * very same `ServicesLayer` the RPC handlers get, so there is one
+     * implementation of "list this user's projects" and two transports over it.
+     * The only thing that differs is how the actor is established: a session
+     * cookie there, a verified API key here.
+     *
+     * `HttpApiScalar.layer` — not `layerCdn`, which fetches Scalar from
+     * jsDelivr. Bundling it keeps the docs page working under a strict CSP and
+     * with no third-party origin in the request path.
+     *
+     * `HttpServer.layerServices` supplies the four platform services
+     * `HttpApiBuilder.layer` asks for (`HttpPlatform`, `Path`, `FileSystem`, an
+     * ETag generator). Its `FileSystem` is a no-op, which is exactly right in a
+     * Worker: nothing here serves files from disk.
+     *
+     * As with `rpcServer` above, it is described here and yielded inside
+     * `fetch`, and the explicit annotation is load-bearing for the same reason:
+     * Alchemy's Worker type does not check `fetch`'s requirement channel, so
+     * this is the only thing that turns a missing layer into a compile error.
+     * Drop `ServicesLayer` and `Projects` appears in the inner requirement
+     * channel immediately.
+     */
+    const publicApi: Effect.Effect<
+      Effect.Effect<
+        HttpServerResponse.HttpServerResponse,
+        HttpServerError.HttpServerError,
+        Scope.Scope | HttpServerRequest | RuntimeContext
+      >,
+      never,
+      Scope.Scope | RuntimeContext
+    > = HttpRouter.toHttpEffect(
+      Layer.mergeAll(
+        HttpApiBuilder.layer(PublicApi, { openapiPath: "/v1/openapi.json" }),
+        HttpApiScalar.layer(PublicApi, { path: "/v1/docs" }),
+      ).pipe(
+        Layer.provide(
+          ProjectsApiHandlers.pipe(
+            Layer.provide([ServicesLayer, ApiKeyAuthLayer.pipe(Layer.provide(AuthLayer))]),
+          ),
+        ),
+        Layer.provide(HttpServer.layerServices),
+      ),
+    );
+
+    // -----------------------------------------------------------------------
     // Request phase
     // -----------------------------------------------------------------------
 
@@ -231,6 +301,14 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         // client, which is where the old trailing-slash hack lived.
         if (path === "/rpc" || path === "/rpc/") {
           return yield* yield* rpcServer;
+        }
+
+        // The public REST surface, reachable from the internet through
+        // `src/routes/v1.$.ts`. `/v1/docs` and `/v1/openapi.json` are part of
+        // it and are deliberately *not* authenticated: the documentation is
+        // public, the data is not.
+        if (path.startsWith("/v1")) {
+          return yield* yield* publicApi;
         }
 
         return HttpServerResponse.text("Not Found", { status: 404 });

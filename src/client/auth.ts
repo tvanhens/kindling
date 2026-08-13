@@ -7,9 +7,21 @@
  * cookie is first-party, so nothing here has to know the deployed hostname
  * (see the long comment in `src/backend/api.ts` for why that matters).
  */
+import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/react";
 
-export const authClient = createAuthClient();
+/**
+ * `apiKeyClient()` mirrors the server's `apiKey()` plugin (see
+ * `src/backend/auth.ts`), which is what types `authClient.apiKey.create` /
+ * `.delete` for `/app/settings/api-keys`.
+ *
+ * Minting and revoking a key is a *session* operation — the same category as
+ * changing a password — so it goes over the auth client, through the
+ * `/api/auth/*` proxy, rather than over the RPC contract. Reading the list is
+ * an RPC (`listApiKeys`), because the page renders it server-side in the
+ * loader.
+ */
+export const authClient = createAuthClient({ plugins: [apiKeyClient()] });
 
 /** The shape Better Auth returns in the `error` slot of every client call. */
 export type AuthError = {

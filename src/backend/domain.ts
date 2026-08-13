@@ -14,11 +14,11 @@
  *
  * `ProjectNotFound` is raised by `Projects.remove` in `./projects.ts`. It is a
  * fact about projects, not about a wire format, and *every* transport that
- * calls the service has to map it — the RPC group today, a public HttpApi
- * tomorrow. Errors a transport invents for itself stay with that transport:
- * `Unauthorized` is raised by the RPC auth middleware in `./rpc.ts` and lives
- * there, because a public API would authenticate differently (bearer token,
- * API key) and mint its own 401.
+ * calls the service has to map it — the RPC group, and the public HttpApi in
+ * `./public/v1/`, which turns it into a 404. Errors a transport invents for
+ * itself stay with that transport: `Unauthorized` is raised by the RPC auth
+ * middleware and lives in `./rpc.ts`; the public API authenticates with an API
+ * key and mints its own 401 in `./public/v1/schemas.ts`.
  */
 import { Schema } from "effect";
 
@@ -45,6 +45,24 @@ export class Project extends Schema.Class<Project>("Project")({
   description: Schema.NullOr(Schema.String),
   createdAt: Schema.Date,
   updatedAt: Schema.Date,
+}) {}
+
+/**
+ * An API key as it may be shown *after* creation.
+ *
+ * The secret itself is deliberately absent: Better Auth's `apiKey` plugin
+ * stores only a hash, and the full key exists exactly once — in the response to
+ * `authClient.apiKey.create`. `start` is the handful of leading characters kept
+ * in plaintext so a person can tell their keys apart.
+ */
+export class ApiKeySummary extends Schema.Class<ApiKeySummary>("ApiKeySummary")({
+  id: Schema.String,
+  name: Schema.NullOr(Schema.String),
+  start: Schema.NullOr(Schema.String),
+  enabled: Schema.Boolean,
+  createdAt: Schema.Date,
+  lastRequest: Schema.NullOr(Schema.Date),
+  expiresAt: Schema.NullOr(Schema.Date),
 }) {}
 
 /** Raised when a project does not exist *or* is not owned by the caller. */

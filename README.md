@@ -29,6 +29,10 @@ a database to a frontend.
 - **Guarded app pages** (`/app/*`) behind a structural route guard.
 - **A worked CRUD example** — Projects: a table, an RPC group, a page, and
   multi-tenant scoping enforced in the SQL (`/app/dashboard`).
+- **A documented public REST API** (`/v1`) over the same domain services,
+  authenticated with API keys, with an OpenAPI document (`/v1/openapi.json`)
+  and a Scalar reference (`/v1/docs`). Keys are minted, listed and revoked at
+  `/app/settings/api-keys`.
 - **Light/dark theming** with no flash of the wrong theme, driven by design
   tokens.
 - **CI** that typechecks, lints, format-checks and validates commit messages.
@@ -68,13 +72,16 @@ Website worker (TanStack Start SSR)
   ├── loaders + server functions    src/server/api.ts  ─┐
   │      the ONLY data layer; the browser never          │ Effect RPC over
   │      speaks RPC and never sees /rpc                  │ env.BACKEND.fetch
-  └── /api/auth/*  ─── proxy: env.BACKEND.fetch(request) ┤ (backend is private)
-         forwards the ORIGINAL Request unchanged         ▼
+  ├── /api/auth/*  ─── proxy: env.BACKEND.fetch(request) ┤ (backend is private)
+  │      forwards the ORIGINAL Request unchanged          │
+  └── /v1/*        ─── proxy: env.BACKEND.fetch(request)  ▼
 Backend worker (Effect, workersDev: false)
-  ├── /api/auth/* → Better Auth  → D1 (owns user/session/account/verification)
-  └── /rpc        → Effect RPC   ─┐
-                                  ▼
-                     Domain services: Projects, Profile
+  ├── /api/auth/* → Better Auth  → D1 (owns user/session/account/verification
+  │                                    /apikey)
+  ├── /rpc        → Effect RPC   ─┐  session cookie → CurrentUser
+  └── /v1/*       → HttpApi      ─┤  API key        → CurrentActor
+                                  ▼  (+ /v1/docs, /v1/openapi.json, public)
+                     Domain services: Projects, Profile, ApiKeys
                        → Drizzle → D1 (owns app tables)
 ```
 

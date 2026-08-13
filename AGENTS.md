@@ -48,11 +48,12 @@ transport over them, not the place the logic lives.
 src/backend/domain.ts     entities + domain errors (no server-only imports)
 src/backend/projects.ts   Projects service  ─┐  the real logic: Drizzle, Better
 src/backend/profile.ts    Profile  service  ─┤  Auth. Depend on Database / Auth,
-                                             │  never on a transport.
+src/backend/apiKeys.ts    ApiKeys  service  ─┤  never on a transport.
                                              ├── src/backend/rpc.ts + the
                                              │   handlers in api.ts — internal
                                              │   transport, free to change
-                                             └── (future) a public HttpApi
+                                             └── src/backend/public/v1/ — the
+                                                 public REST API (`/v1`)
 ```
 
 **The rule that makes this worth anything: a service never reaches for
@@ -87,42 +88,61 @@ Domain errors live with the domain. `ProjectNotFound` is in `domain.ts` because
 stays in `rpc.ts` because no service can raise it — it is a fact about the RPC
 auth middleware.
 
-### Adding a public REST/OpenAPI API later
+### The public REST/OpenAPI API
 
-This is deliberately _not_ built. When you need it, it is a third branch in the
-`fetch` dispatch in `src/backend/api.ts`, provided the same `ServicesLayer`:
+`src/backend/public/v1/` is a second transport over the same services, mounted
+as the third branch of the `fetch` dispatch in `src/backend/api.ts`:
 
 ```
 if (path.startsWith("/v1")) return yield* yield* publicApi;
 ```
 
-where `publicApi` is built the same way `rpcServer` is —
+`publicApi` is built the same way `rpcServer` is —
 `HttpRouter.toHttpEffect(appLayer)`, with
 `HttpApiBuilder.layer(api, { openapiPath: "/v1/openapi.json" })` and
-`HttpApiScalar.layer({ path: "/v1/docs" })` in the layer. All of that is in core
-`effect` under `effect/unstable/httpapi` — **no new dependencies**. Give the new
-effect the same explicit `Effect.Effect<…, never, Scope.Scope | RuntimeContext>`
-annotation `rpcServer` has, for the same reason.
+`HttpApiScalar.layer(api, { path: "/v1/docs" })` in the layer, all from core
+`effect` under `effect/unstable/httpapi`. `HttpServer.layerServices` supplies
+the four platform services `HttpApiBuilder.layer` asks for. It carries the same
+explicit `Effect.Effect<…, never, Scope.Scope | RuntimeContext>` annotation
+`rpcServer` has, for the same reason (invariant 2 below).
 
-Four decisions to get right, all of them cheap now and expensive later:
+Use `HttpApiScalar.layer`, **not `layerCdn`** — the CDN variant pulls Scalar
+from jsDelivr, which breaks under a strict CSP and adds a third-party origin to
+a docs page for no gain.
 
-1. **Separate DTO schemas.** Do not reuse `Project` / `User` from `domain.ts` in
-   the public contract. An internal schema changes when the domain does; a
-   public schema is a compatibility commitment to strangers. Write
-   `src/backend/public/v1/schemas.ts` and map explicitly, even when the two are
-   identical on day one. That mapping is where "we added a column" stops being
-   "we changed your API".
-2. **Version from the first endpoint.** `/v1` in the path from the very first
-   route. Adding `/v2` later is routine; retrofitting a version onto unversioned
-   URLs is not.
-3. **Bearer/API-key auth, not cookies.** The session cookie is for the browser.
-   Add Better Auth's `bearer` (and/or `apiKey`) plugin in `src/backend/auth.ts`
-   and declare `HttpApiSecurity.bearer` on the API, implemented as an
-   `HttpApiMiddleware` that resolves the token to a user id — the public
-   equivalent of `AuthMiddleware`. Then call the same services with that id.
-4. **Handlers stay thin.** If a public handler needs logic that is not in a
-   service, that logic is in the wrong place. Move it into the service and let
-   the RPC handler benefit too.
+The four decisions the layering exists to make possible, and how they came out:
+
+1. **Separate DTO schemas.** `src/backend/public/v1/schemas.ts` defines
+   `ProjectResource` and maps from `Project` explicitly (`fromProject`), even
+   though the two are near-identical. An internal schema changes when the domain
+   does; a public one is a compatibility commitment to strangers. The mapping is
+   where "we added a column" stops being "we changed your API". Do not "simplify"
+   it by re-exporting the domain class.
+2. **Versioned from the first endpoint.** `/v1` is in the path itself
+   (`.prefix("/v1/projects")`), not implied by the mount point. `/v2` is then a
+   second `HttpApi` served from the same dispatch.
+3. **API-key auth, not cookies.** Better Auth's `apiKey()` plugin
+   (`@better-auth/api-key`, pinned in lockstep with `better-auth`) owns the
+   `apikey` table, the hashing and the expiry — it is _not_ in
+   `src/db/schema.ts`, for the reasons in invariant 1. `HttpApiSecurity.apiKey`
+   is declared on the API so it lands in the OpenAPI document, and `ApiKeyAuth`
+   (`public/v1/handlers.ts`) resolves the header to a user id with
+   `auth.api.verifyApiKey`, providing `CurrentActor`. The actor comes from the
+   verified key and nowhere else.
+4. **Handlers stay thin.** They resolve the actor and call a service.
+   `Projects.get` was added to the _service_ for `GET /v1/projects/:id` rather
+   than querying from the handler, so tenant scoping stays in the SQL.
+
+`/v1/docs` and `/v1/openapi.json` are unauthenticated on purpose: the
+documentation is public, the data is not. The browser reaches all of it through
+`src/routes/v1.$.ts`, which forwards the original `Request` unchanged exactly
+like `src/routes/api.auth.$.ts`.
+
+Keys are minted, listed and revoked at `/app/settings/api-keys`. The list is a
+loader over the `listApiKeys` RPC (`src/backend/apiKeys.ts`); minting and
+revoking go straight to Better Auth from the browser via `authClient.apiKey.*`,
+because the full secret is returned exactly once and has no business travelling
+through a second transport.
 
 ## Invariants you must not break
 
@@ -131,7 +151,8 @@ before changing the code; if a change seems to require breaking one, stop and
 ask.
 
 1. **The Drizzle / Better Auth table split.** Better Auth owns `user`,
-   `session`, `account`, `verification` and migrates them itself. `src/db/schema.ts`
+   `session`, `account`, `verification` — and `apikey`, from the `apiKey()`
+   plugin — and migrates them itself. `src/db/schema.ts`
    contains app tables only, and references `user.id` as a plain indexed `text`
    column — never a Drizzle `references()` foreign key. Adding an auth table to
    the Drizzle schema makes the two migrators fight.
@@ -165,7 +186,8 @@ ask.
 6. **Domain services take the actor as an argument.** Never `yield* CurrentUser`
    (or `HttpServerRequest`) inside `src/backend/projects.ts` /
    `src/backend/profile.ts` — see the layering section above. Breaking this is
-   how a future public API ends up duplicating the logic.
+   how the public API in `src/backend/public/v1/` would end up duplicating the
+   logic.
 
 7. **`src/backend/rpc.ts` and `src/backend/domain.ts` have no server-only
    imports.** Both reach the Website Worker as well as the backend one (`rpc.ts`

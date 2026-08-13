@@ -15,8 +15,11 @@ import { Route as authRegisterRouteImport } from './routes/(auth)/register'
 import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-password'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
 import { Route as marketingPricingRouteImport } from './routes/(marketing)/pricing'
+import { Route as V1SplatRouteImport } from './routes/v1.$'
 import { Route as AppAppDashboardRouteImport } from './routes/_app/app/dashboard'
+import { Route as AppAppSettingsRouteImport } from './routes/_app/app/settings'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
+import { Route as AppAppSettingsApiKeysRouteImport } from './routes/_app/app/settings/api-keys'
 import { Route as AppAppSettingsProfileRouteImport } from './routes/_app/app/settings/profile'
 
 const AppRoute = AppRouteImport.update({
@@ -48,9 +51,19 @@ const marketingPricingRoute = marketingPricingRouteImport.update({
   path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1SplatRoute = V1SplatRouteImport.update({
+  id: '/v1/$',
+  path: '/v1/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppAppDashboardRoute = AppAppDashboardRouteImport.update({
   id: '/app/dashboard',
   path: '/app/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAppSettingsRoute = AppAppSettingsRouteImport.update({
+  id: '/app/settings',
+  path: '/app/settings',
   getParentRoute: () => AppRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -58,10 +71,15 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAppSettingsApiKeysRoute = AppAppSettingsApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => AppAppSettingsRoute,
+} as any)
 const AppAppSettingsProfileRoute = AppAppSettingsProfileRouteImport.update({
-  id: '/app/settings/profile',
-  path: '/app/settings/profile',
-  getParentRoute: () => AppRoute,
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppAppSettingsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -70,8 +88,11 @@ export interface FileRoutesByFullPath {
   '/register': typeof authRegisterRoute
   '/reset-password': typeof authResetPasswordRoute
   '/pricing': typeof marketingPricingRoute
+  '/v1/$': typeof V1SplatRoute
   '/app/dashboard': typeof AppAppDashboardRoute
+  '/app/settings': typeof AppAppSettingsRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/app/settings/api-keys': typeof AppAppSettingsApiKeysRoute
   '/app/settings/profile': typeof AppAppSettingsProfileRoute
 }
 export interface FileRoutesByTo {
@@ -80,8 +101,11 @@ export interface FileRoutesByTo {
   '/register': typeof authRegisterRoute
   '/reset-password': typeof authResetPasswordRoute
   '/pricing': typeof marketingPricingRoute
+  '/v1/$': typeof V1SplatRoute
   '/app/dashboard': typeof AppAppDashboardRoute
+  '/app/settings': typeof AppAppSettingsRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/app/settings/api-keys': typeof AppAppSettingsApiKeysRoute
   '/app/settings/profile': typeof AppAppSettingsProfileRoute
 }
 export interface FileRoutesById {
@@ -91,9 +115,12 @@ export interface FileRoutesById {
   '/(auth)/register': typeof authRegisterRoute
   '/(auth)/reset-password': typeof authResetPasswordRoute
   '/(marketing)/pricing': typeof marketingPricingRoute
+  '/v1/$': typeof V1SplatRoute
   '/(marketing)/': typeof marketingIndexRoute
   '/_app/app/dashboard': typeof AppAppDashboardRoute
+  '/_app/app/settings': typeof AppAppSettingsRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/_app/app/settings/api-keys': typeof AppAppSettingsApiKeysRoute
   '/_app/app/settings/profile': typeof AppAppSettingsProfileRoute
 }
 export interface FileRouteTypes {
@@ -104,8 +131,11 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/pricing'
+    | '/v1/$'
     | '/app/dashboard'
+    | '/app/settings'
     | '/api/auth/$'
+    | '/app/settings/api-keys'
     | '/app/settings/profile'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -114,8 +144,11 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/pricing'
+    | '/v1/$'
     | '/app/dashboard'
+    | '/app/settings'
     | '/api/auth/$'
+    | '/app/settings/api-keys'
     | '/app/settings/profile'
   id:
     | '__root__'
@@ -124,9 +157,12 @@ export interface FileRouteTypes {
     | '/(auth)/register'
     | '/(auth)/reset-password'
     | '/(marketing)/pricing'
+    | '/v1/$'
     | '/(marketing)/'
     | '/_app/app/dashboard'
+    | '/_app/app/settings'
     | '/api/auth/$'
+    | '/_app/app/settings/api-keys'
     | '/_app/app/settings/profile'
   fileRoutesById: FileRoutesById
 }
@@ -136,6 +172,7 @@ export interface RootRouteChildren {
   authRegisterRoute: typeof authRegisterRoute
   authResetPasswordRoute: typeof authResetPasswordRoute
   marketingPricingRoute: typeof marketingPricingRoute
+  V1SplatRoute: typeof V1SplatRoute
   marketingIndexRoute: typeof marketingIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -184,11 +221,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingPricingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/$': {
+      id: '/v1/$'
+      path: '/v1/$'
+      fullPath: '/v1/$'
+      preLoaderRoute: typeof V1SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/app/dashboard': {
       id: '/_app/app/dashboard'
       path: '/app/dashboard'
       fullPath: '/app/dashboard'
       preLoaderRoute: typeof AppAppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/app/settings': {
+      id: '/_app/app/settings'
+      path: '/app/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AppAppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
     '/api/auth/$': {
@@ -198,24 +249,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/app/settings/api-keys': {
+      id: '/_app/app/settings/api-keys'
+      path: '/api-keys'
+      fullPath: '/app/settings/api-keys'
+      preLoaderRoute: typeof AppAppSettingsApiKeysRouteImport
+      parentRoute: typeof AppAppSettingsRoute
+    }
     '/_app/app/settings/profile': {
       id: '/_app/app/settings/profile'
-      path: '/app/settings/profile'
+      path: '/profile'
       fullPath: '/app/settings/profile'
       preLoaderRoute: typeof AppAppSettingsProfileRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppAppSettingsRoute
     }
   }
 }
 
+interface AppAppSettingsRouteChildren {
+  AppAppSettingsApiKeysRoute: typeof AppAppSettingsApiKeysRoute
+  AppAppSettingsProfileRoute: typeof AppAppSettingsProfileRoute
+}
+
+const AppAppSettingsRouteChildren: AppAppSettingsRouteChildren = {
+  AppAppSettingsApiKeysRoute: AppAppSettingsApiKeysRoute,
+  AppAppSettingsProfileRoute: AppAppSettingsProfileRoute,
+}
+
+const AppAppSettingsRouteWithChildren = AppAppSettingsRoute._addFileChildren(
+  AppAppSettingsRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAppDashboardRoute: typeof AppAppDashboardRoute
-  AppAppSettingsProfileRoute: typeof AppAppSettingsProfileRoute
+  AppAppSettingsRoute: typeof AppAppSettingsRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAppDashboardRoute: AppAppDashboardRoute,
-  AppAppSettingsProfileRoute: AppAppSettingsProfileRoute,
+  AppAppSettingsRoute: AppAppSettingsRouteWithChildren,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -226,6 +298,7 @@ const rootRouteChildren: RootRouteChildren = {
   authRegisterRoute: authRegisterRoute,
   authResetPasswordRoute: authResetPasswordRoute,
   marketingPricingRoute: marketingPricingRoute,
+  V1SplatRoute: V1SplatRoute,
   marketingIndexRoute: marketingIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

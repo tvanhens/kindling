@@ -13,6 +13,7 @@
  * Worker's init phase, and provided to the tag from there.
  */
 import { BetterAuth } from "@alchemy.run/better-auth";
+import { apiKey } from "@better-auth/api-key";
 import { Context } from "effect";
 import type * as Effect from "effect/Effect";
 
@@ -26,6 +27,45 @@ import type * as Effect from "effect/Effect";
 export const makeAuth = () =>
   BetterAuth({
     basePath: "/api/auth",
+
+    // ── Plugins ──────────────────────────────────────────────────────────
+    //
+    // `apiKey()` is what authenticates the public REST API in
+    // `./public/v1/`. The session cookie is for the browser; a stranger's
+    // script gets a key instead.
+    //
+    // The plugin owns its own table (`apikey`) and the hashing, prefixing and
+    // expiry of the secret. That table is **not** in `src/db/schema.ts` on
+    // purpose: like `user`/`session`/`account`/`verification` it belongs to
+    // Better Auth, whose migrator alchemy runs as a deploy-time Action. Adding
+    // a plugin changes the auth schema fingerprint, so that Action re-runs on
+    // the next `dev`/`deploy` and creates the table. See the ownership note in
+    // `src/db/schema.ts`.
+    //
+    // Defaults are deliberate: keys are hashed at rest, never recoverable, and
+    // `verifyApiKey` resolves one to its owning `referenceId` (the user id) —
+    // which is the only thing `ApiKeyAuth` in `./public/v1/middleware.ts`
+    // wants.
+    plugins: [
+      apiKey({
+        // The plugin's own defaults are `maxRequests: 10` per `timeWindow: 1
+        // day`. That is a sensible floor for a library and a trap for a
+        // template: a fork would ship a public API that stops answering after
+        // ten calls, and — because the limit surfaces as a rejected key — the
+        // caller would be told their credential is invalid.
+        //
+        // 120/minute is a starting point, not a recommendation: enough for a
+        // real integration to work out of the box, low enough that a runaway
+        // script is contained. Tune it, or set `enabled: false` and enforce
+        // limits at the edge with Cloudflare's rate limiting instead, which
+        // does not cost a D1 write per request.
+        rateLimit: {
+          enabled: true,
+          timeWindow: 60_000,
+          maxRequests: 120,
+        },
+      }),
+    ],
 
     // ── Public origin ────────────────────────────────────────────────────
     // `baseURL` and `trustedOrigins` are deliberately left unset.

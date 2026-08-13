@@ -15,7 +15,7 @@
  */
 import { Context, Schema } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
-import { Project, ProjectNotFound, User } from "./domain.ts";
+import { ApiKeySummary, Project, ProjectNotFound, User } from "./domain.ts";
 
 // Type-only: the auth middleware reaches the database through the Worker's
 // runtime context, so it must declare that requirement. Erased at build time —
@@ -32,7 +32,7 @@ import type { RuntimeContext } from "alchemy/RuntimeContext";
 // re-export is safe for the Website bundle.
 // ---------------------------------------------------------------------------
 
-export { Project, ProjectNotFound, User };
+export { ApiKeySummary, Project, ProjectNotFound, User };
 
 // ---------------------------------------------------------------------------
 // Transport errors
@@ -43,8 +43,9 @@ export { Project, ProjectNotFound, User };
  *
  * This one stays here rather than moving to `./domain.ts`: no domain service
  * can raise it, because they take their actor as an argument instead of
- * authenticating. It is a fact about *this* transport's auth scheme, and a
- * public API would mint its own equivalent from `HttpApiSecurity`.
+ * authenticating. It is a fact about *this* transport's auth scheme: the public
+ * API mints its own equivalent from `HttpApiSecurity` in
+ * `src/backend/public/v1/schemas.ts`.
  */
 export class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", {
   message: Schema.String,
@@ -127,6 +128,14 @@ export class AppRpcs extends RpcGroup.make(
     payload: UpdateProfilePayload,
     success: User,
   }),
+
+  // --- api keys ------------------------------------------------------------
+  //
+  // Read only. Minting and revoking go straight to Better Auth from the browser
+  // (`authClient.apiKey.*`), because the full secret is returned exactly once
+  // and there is no reason for it to travel through a second transport. See
+  // `src/backend/apiKeys.ts`.
+  Rpc.make("listApiKeys", { success: Schema.Array(ApiKeySummary) }),
 
   // --- projects (the CRUD pattern to copy) ---------------------------------
   Rpc.make("listProjects", { success: Schema.Array(Project) }),
