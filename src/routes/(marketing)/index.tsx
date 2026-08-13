@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouteContext } from "@tanstack/react-router";
 import * as stylex from "@stylexjs/stylex";
 
 import { ActionLink, Container, MarketingLayout } from "~/client/chrome";
@@ -148,6 +148,10 @@ const steps = [
 ] as const;
 
 function HomePage() {
+  // Resolved by the root route during SSR, so the signed-in variant is in the
+  // first byte of HTML rather than swapped in after hydration.
+  const { user } = useRouteContext({ from: "__root__" });
+
   return (
     <MarketingLayout>
       <Container style={styles.hero}>
@@ -164,7 +168,11 @@ function HomePage() {
             that you can read all of it.
           </Text>
           <Row gap="md" wrap>
-            <ActionLink to="/register">Start building</ActionLink>
+            {user === null ? (
+              <ActionLink to="/register">Start building</ActionLink>
+            ) : (
+              <ActionLink to="/app/dashboard">Go to your dashboard</ActionLink>
+            )}
             <ActionLink to="/pricing" variant="secondary">
               See pricing
             </ActionLink>
@@ -236,14 +244,21 @@ function HomePage() {
           <Stack align="center" gap="lg">
             <Heading level={3}>Ready when you are</Heading>
             <Text size="lg" tone="muted">
-              Create an account and look around the signed-in app — it is the same code you will be
-              editing five minutes from now.
+              {user === null
+                ? "Create an account and look around the signed-in app — it is the same code you will be editing five minutes from now."
+                : "You are signed in. The app below is the same code you will be editing five minutes from now."}
             </Text>
             <Row gap="md" wrap justify="center">
-              <ActionLink to="/register">Create an account</ActionLink>
-              <ActionLink to="/login" variant="secondary">
-                Sign in
-              </ActionLink>
+              {user === null ? (
+                <>
+                  <ActionLink to="/register">Create an account</ActionLink>
+                  <ActionLink to="/login" variant="secondary">
+                    Sign in
+                  </ActionLink>
+                </>
+              ) : (
+                <ActionLink to="/app/dashboard">Open the dashboard</ActionLink>
+              )}
             </Row>
           </Stack>
         </div>

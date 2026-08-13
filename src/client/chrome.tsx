@@ -8,7 +8,7 @@
  */
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouteContext } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { Box, Button, Card, Heading, Row, Stack, Text } from "~/components";
@@ -214,8 +214,18 @@ export function ThemeToggle() {
   );
 }
 
-/** Marketing/site header. Guarded pages get their own shell in `_app.tsx`. */
+/**
+ * Marketing/site header. Guarded pages get their own shell in `_app.tsx`.
+ *
+ * The session comes from the root route's context, which is resolved during SSR
+ * for every route — public ones included. That is deliberate: inviting someone
+ * who is already signed in to "Sign in" is a small thing that makes a product
+ * feel broken, and resolving it on the client after hydration would swap the
+ * link under the reader.
+ */
 export function SiteHeader() {
+  const { user } = useRouteContext({ from: "__root__" });
+
   return (
     <Box as="header" style={styles.header}>
       <Container>
@@ -225,9 +235,15 @@ export function SiteHeader() {
             <Link to="/pricing" {...stylex.props(styles.navLink)}>
               Pricing
             </Link>
-            <Link to="/login" {...stylex.props(styles.navLink)}>
-              Sign in
-            </Link>
+            {user === null ? (
+              <Link to="/login" {...stylex.props(styles.navLink)}>
+                Sign in
+              </Link>
+            ) : (
+              <Link to="/app/dashboard" {...stylex.props(styles.navLink)}>
+                Dashboard
+              </Link>
+            )}
             <ThemeToggle />
           </Row>
         </Row>

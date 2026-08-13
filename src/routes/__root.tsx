@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { Alert, Heading, Stack, Text } from "~/components";
 import { ActionLink, Container, Page } from "~/client/chrome";
 import { themeInitScript } from "~/client/theme";
+import { fetchSession, type SessionUser } from "~/server/session";
 import { color, font, space } from "~/styles/tokens.stylex";
 
 // The single CSS entrypoint. StyleX appends every compiled rule to the asset
@@ -40,6 +41,14 @@ const styles = stylex.create({
 });
 
 export const Route = createRootRoute({
+  // Resolve the session once, for every route, public pages included. The site
+  // header needs it (a signed-in visitor on the landing page should not be
+  // invited to "Sign in"), and hoisting it here means the `_app` guard reads
+  // the same value instead of looking it up a second time. See
+  // `src/server/session.ts` for the cost of doing this on public pages.
+  beforeLoad: async (): Promise<{ user: SessionUser | null }> => ({
+    user: await fetchSession(),
+  }),
   head: () => ({
     meta: [
       { charSet: "utf-8" },
