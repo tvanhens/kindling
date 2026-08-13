@@ -111,6 +111,34 @@ non-TTY stdout — and refuses to render prompts. Consequences:
 Prefer `bun run plan` over `bun run deploy` when you are checking your work.
 Never deploy or destroy a stage unless the user asked for it.
 
+## Driving the UI with Playwright
+
+`.mcp.json` registers the Playwright MCP server, so you can exercise the real
+UI instead of guessing at it. It runs `--headless --isolated`: no window opens,
+and the browser profile is held in memory, so **every session starts signed
+out** — which is what you want when testing registration and login.
+
+The dev server is not started for you. Run `bun run dev` first and drive
+**http://localhost:1338** (the Website worker). Port 1337 is the private
+backend; hitting it directly bypasses the proxy, so cookies and the auth origin
+behave differently. Use 1337 only to isolate whether a fault is in the Website
+or the backend.
+
+Worth exercising, because none of it is covered by `bun run check`:
+
+- register → land on `/app/dashboard` → sign out → sign back in
+- visiting `/app/dashboard` signed out redirects to `/login?redirect=…`, and
+  the redirect is honored after login
+- create and delete a project, and confirm the list updates without a manual
+  refresh (mutations invalidate via `reactivityKeys`)
+- `browser_console_messages` at level `error` after each flow — hydration and
+  atom errors surface there and nowhere else
+
+Do not hand-write Effect RPC envelopes to test the API. The wire format is
+internal and easy to get wrong (it wants `headers: []` — an array of pairs —
+and a single request object, not an array). Drive the UI, or build a client
+from `AppRpcs` with `RpcClient.make`.
+
 ## Where to look
 
 | Question                           | File                                                                    |
