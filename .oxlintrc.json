@@ -67,6 +67,10 @@
     // typecheck. The rule has no per-module allowlist, so it is off.
     "import/no-named-as-default-member": "off",
 
+    // `_tag` is Effect's discriminant convention — it is on every tagged error,
+    // and on the `RpcResult` union that server functions return.
+    "eslint/no-underscore-dangle": ["warn", { "allow": ["_tag"] }],
+
     // --- Style: formatting is oxfmt's job, not the linter's ---------------
     "eslint/no-console": "warn",
     "eslint/no-debugger": "error",

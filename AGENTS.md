@@ -22,7 +22,7 @@ The authoritative reference is installed locally:
 Do not add `@effect/platform`, `@effect/rpc` or `@effect/schema`. In v4 all of
 that is in core `effect`, under `effect/unstable/*` and `effect/Schema`. This
 repo imports e.g. `effect/unstable/rpc/RpcServer`,
-`effect/unstable/http/HttpServerRequest`, `effect/unstable/reactivity/Atom`.
+`effect/unstable/rpc/RpcClient`, `effect/unstable/http/HttpServerRequest`.
 
 ### The v3 → v4 renames that bite
 
@@ -62,11 +62,14 @@ ask.
    session during SSR. Never add a client-only auth check, and never add a page
    under `/app` outside `_app/`.
 
-4. **The proxies forward the original `Request` unchanged.**
-   `src/routes/rpc.ts` and `src/routes/api.auth.$.ts` are `env.BACKEND.fetch(request)`
-   and nothing else. Rebuilding the request, changing the URL, or filtering
-   headers breaks session resolution and Better Auth's origin inference
-   (`baseURL`/`trustedOrigins` are deliberately unset).
+4. **`src/routes/api.auth.$.ts` forwards the original `Request` unchanged.**
+   It is `env.BACKEND.fetch(request)` and nothing else. Rebuilding the request,
+   changing the URL, or filtering headers breaks session resolution and Better
+   Auth's origin inference (`baseURL`/`trustedOrigins` are deliberately unset).
+   It exists because Better Auth's React client runs in the _browser_. There is
+   no equivalent proxy for RPC: the browser never speaks RPC, so
+   `src/server/rpc.ts` calls the binding itself and forwards the `Cookie`
+   header and the incoming origin by hand.
 
 5. **Tenant scoping stays in the SQL.** `eq(projects.ownerId, user.id)` in the
    query itself; deletes use `and(eq(id), eq(ownerId))`. Identity comes from
@@ -74,9 +77,9 @@ ask.
    post-filter or a shared helper that a handler can forget to call.
 
 6. **`src/backend/rpc.ts` has no server-only imports.** It is imported by the
-   browser bundle. The single `import type { RuntimeContext }` is erased at
-   compile time; a value import of `alchemy/*`, `better-auth` or `drizzle-orm`
-   there breaks the client build.
+   Website Worker as well as the backend one. The single
+   `import type { RuntimeContext }` is erased at compile time; a value import of
+   `alchemy/*`, `better-auth` or `drizzle-orm` there breaks the Website build.
 
 7. **`*.stylex.ts` files contain only `defineVars`/`defineConsts` exports.** A
    type, helper or constant in one of those files breaks the build for the whole
@@ -85,8 +88,8 @@ ask.
 
 8. **No new dependencies without asking.** The dependency list is short on
    purpose: no ESLint, no Prettier, no commitlint, no husky, no test framework.
-   `effect`, `@effect/atom-react` and the `@effect/platform-*` packages are
-   pinned and must be bumped in lockstep; `@effect/platform-bun`,
+   `effect` and the `@effect/platform-*` packages are pinned and must be
+   bumped in lockstep; `@effect/platform-bun`,
    `-node` and `-node-shared` are optional peers of Alchemy that must stay
    installed or the CLI fails with `Cannot find module`.
 
@@ -130,9 +133,9 @@ Worth exercising, because none of it is covered by `bun run check`:
 - visiting `/app/dashboard` signed out redirects to `/login?redirect=…`, and
   the redirect is honored after login
 - create and delete a project, and confirm the list updates without a manual
-  refresh (mutations invalidate via `reactivityKeys`)
-- `browser_console_messages` at level `error` after each flow — hydration and
-  atom errors surface there and nowhere else
+  refresh (mutations `await router.invalidate()`, which re-runs the loader)
+- `browser_console_messages` at level `error` after each flow — hydration
+  mismatches and serialization failures surface there and nowhere else
 
 Do not hand-write Effect RPC envelopes to test the API. The wire format is
 internal and easy to get wrong (it wants `headers: []` — an array of pairs —
@@ -159,16 +162,16 @@ look exactly like one.
 
 ## Where to look
 
-| Question                           | File                                                                    |
-| ---------------------------------- | ----------------------------------------------------------------------- |
-| How are the two Workers wired?     | `alchemy.run.ts`, `src/backend/api.ts`                                  |
-| What does the API look like?       | `src/backend/rpc.ts` (the shared contract)                              |
-| How do I add a table?              | `src/db/schema.ts`, `src/backend/database.ts`                           |
-| How does the browser call the API? | `src/client/rpc.ts`                                                     |
-| How does auth work end to end?     | `src/routes/_app.tsx`, `src/routes/api.auth.$.ts`, `src/backend/api.ts` |
-| Styling rules                      | `src/styles/README.md`                                                  |
-| Lint configuration and why         | `.oxlintrc.json` (it is commented)                                      |
-| Commit message rules               | `CONTRIBUTING.md`, `scripts/check-commit-message.sh`                    |
+| Question                       | File                                                                    |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| How are the two Workers wired? | `alchemy.run.ts`, `src/backend/api.ts`                                  |
+| What does the API look like?   | `src/backend/rpc.ts` (the shared contract)                              |
+| How do I add a table?          | `src/db/schema.ts`, `src/backend/database.ts`                           |
+| How does the browser get data? | `src/server/api.ts` (loaders + server fns), `src/server/rpc.ts`         |
+| How does auth work end to end? | `src/routes/_app.tsx`, `src/routes/api.auth.$.ts`, `src/backend/api.ts` |
+| Styling rules                  | `src/styles/README.md`                                                  |
+| Lint configuration and why     | `.oxlintrc.json` (it is commented)                                      |
+| Commit message rules           | `CONTRIBUTING.md`, `scripts/check-commit-message.sh`                    |
 
 The code comments in this repo are the design documentation — they record why a
 thing is the way it is, not what it does. When you change code with a comment
@@ -179,10 +182,14 @@ above it, update the comment or explain why it still holds.
 Do not "fix" these back to the obvious form without checking the upstream
 version first.
 
-- `AtomRpc`'s `Rpc.query()` resolves to `never` for procedures whose middleware
-  declares `requires` (rc.108 omits the sixth `Requires` type parameter from its
-  conditional). `src/client/rpc.ts` has a local `query()` helper built from
-  `Rpc.runtime.atom` + `Atom.withReactivity`. Its `mutation` sibling is fine.
+- The RPC client posts to `/rpc/`, with a trailing slash: it issues `post("")`
+  against the configured base URL and `HttpClientRequest.prependUrl` joins the
+  two segments with a slash. `src/backend/api.ts` accepts `/rpc` and `/rpc/`
+  rather than rewriting the URL back on the caller's side.
+- seroval (TanStack Start's serializer) refuses an unknown class prototype, so
+  a decoded `Schema.Class` cannot cross a loader or server-function boundary as
+  an instance. `plain()` in `src/server/rpc.ts` spreads it into an object; its
+  `Date` fields survive as `Date`s.
 - `RpcServer.layerHttp` defaults to `protocol: "websocket"`; the repo uses
   `RpcServer.toHttpEffect`. Switching to `layerHttp` without `protocol: "http"`
   makes every POST to `/rpc` 404 silently.

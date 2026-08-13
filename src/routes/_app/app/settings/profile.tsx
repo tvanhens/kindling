@@ -10,23 +10,26 @@
  *   - Changing a password goes through the **auth client**, because it needs the
  *     current password and re-issues the session cookie.
  */
-import { useAtom, useAtomValue } from "@effect/atom-react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
+import type { User } from "~/backend/rpc";
 import { authClient, authErrorMessage } from "~/client/auth";
-import { currentUserAtom, keys, rpcErrorMessage, updateProfileAtom } from "~/client/rpc";
+import { getCurrentUser, updateProfile } from "~/server/api";
+import type { RpcFailure } from "~/server/rpc";
 import { Alert, Button, Card, Field, Heading, Input, Stack, Text } from "~/components";
 
 export const Route = createFileRoute("/_app/app/settings/profile")({
   head: () => ({ meta: [{ title: "Profile — Kindling" }] }),
+  loader: () => getCurrentUser(),
   component: ProfilePage,
 });
 
 const MIN_PASSWORD_LENGTH = 8;
 
 function ProfilePage() {
+  const currentUser = Route.useLoaderData();
+
   return (
     <Stack gap="xxl">
       <Stack gap="xs">
@@ -35,7 +38,13 @@ function ProfilePage() {
         </Heading>
         <Text tone="muted">Your account details, and the password you sign in with.</Text>
       </Stack>
-      <ProfileForm />
+      {currentUser._tag === "Failure" ? (
+        <Alert tone="danger" title="Could not load your account">
+          {currentUser.failure.message}
+        </Alert>
+      ) : (
+        <ProfileForm user={currentUser.value} />
+      )}
       <PasswordForm />
     </Stack>
   );
@@ -45,30 +54,43 @@ function ProfilePage() {
 // Name + avatar, via the RPC contract
 // ---------------------------------------------------------------------------
 
-function ProfileForm() {
-  // The route context already carries a user (the guard fetched it during SSR),
-  // but this atom is the *live* copy: it re-runs whenever a mutation invalidates
-  // the `user` key, so the form reflects what the server actually stored.
-  const currentUser = useAtomValue(currentUserAtom);
-  const [result, updateProfile] = useAtom(updateProfileAtom);
-
-  const [name, setName] = useState("");
-  const [image, setImage] = useState("");
+function ProfileForm({ user }: { user: User }) {
+  // The loader already has the server's copy, so the inputs are seeded on the
+  // first render — server and client agree, and there is no empty-then-filled
+  // flash to hydrate around. Later refreshes must not clobber whatever the user
+  // is currently typing, which is why this is `useState` and not derived state.
+  const [name, setName] = useState(user.name);
+  const [image, setImage] = useState(user.image ?? "");
   const [submitted, setSubmitted] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<RpcFailure | null>(null);
+  const [saved, setSaved] = useState(false);
+  const router = useRouter();
 
-  // Seed the inputs once, the first time the server's copy arrives. Later
-  // refreshes must not clobber whatever the user is currently typing.
-  useEffect(() => {
-    if (hydrated || !AsyncResult.isSuccess(currentUser)) return;
-    setName(currentUser.value.name);
-    setImage(currentUser.value.image ?? "");
-    setHydrated(true);
-  }, [currentUser, hydrated]);
-
-  const pending = AsyncResult.isWaiting(result);
   const nameError = submitted && name.trim() === "" ? "A name is required." : undefined;
-  const saved = AsyncResult.isSuccess(result) && !pending;
+
+  const submit = async () => {
+    setSubmitted(true);
+    setFailure(null);
+    setSaved(false);
+    if (name.trim() === "") return;
+
+    setPending(true);
+    const result = await updateProfile({
+      data: { name: name.trim(), image: image.trim() === "" ? null : image.trim() },
+    });
+    setPending(false);
+
+    if (result._tag === "Failure") {
+      setFailure(result.failure);
+      return;
+    }
+
+    setSaved(true);
+    // The guard's session and this route's loader both hold a copy of the user;
+    // invalidating re-runs them so the header and this page agree.
+    await router.invalidate();
+  };
 
   return (
     <Card padding="xl">
@@ -76,12 +98,7 @@ function ProfileForm() {
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          setSubmitted(true);
-          if (name.trim() === "") return;
-          updateProfile({
-            payload: { name: name.trim(), image: image.trim() === "" ? null : image.trim() },
-            reactivityKeys: [keys.user],
-          });
+          void submit();
         }}
       >
         <Stack gap="lg">
@@ -90,20 +107,14 @@ function ProfileForm() {
               Account
             </Heading>
             <Text size="sm" tone="muted">
-              {AsyncResult.isSuccess(currentUser)
-                ? `Signed in as ${currentUser.value.email}`
-                : "Loading your account…"}
+              Signed in as {user.email}
             </Text>
           </Stack>
 
           <div aria-live="polite">
-            {AsyncResult.isFailure(currentUser) ? (
-              <Alert tone="danger" title="Could not load your account">
-                {rpcErrorMessage(currentUser.cause)}
-              </Alert>
-            ) : AsyncResult.isFailure(result) ? (
+            {failure !== null ? (
               <Alert tone="danger" title="Could not save your profile">
-                {rpcErrorMessage(result.cause)}
+                {failure.message}
               </Alert>
             ) : saved ? (
               <Alert tone="success">Profile saved.</Alert>
@@ -113,6 +124,7 @@ function ProfileForm() {
           <Field error={nameError} label="Display name" required>
             <Input
               autoComplete="name"
+              disabled={pending}
               name="name"
               onChange={(event) => setName(event.target.value)}
               value={name}
@@ -122,6 +134,7 @@ function ProfileForm() {
           <Field hint="A link to an image. Leave empty to remove it." label="Avatar URL">
             <Input
               autoComplete="photo"
+              disabled={pending}
               inputMode="url"
               name="image"
               onChange={(event) => setImage(event.target.value)}

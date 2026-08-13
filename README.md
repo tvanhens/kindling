@@ -35,19 +35,19 @@ a database to a frontend.
 
 ## The stack
 
-| Piece                                                                                                   | Version                                | Why                                                                                                          |
-| ------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| [bun](https://bun.sh)                                                                                   | 1.3.10                                 | Runtime, package manager and script runner. One tool.                                                        |
-| [jj](https://jj-vcs.dev)                                                                                | 0.38, colocated with git               | VCS. See [CONTRIBUTING.md](./CONTRIBUTING.md); a plain git workflow also works.                              |
-| [Alchemy](https://alchemy.run)                                                                          | 2.0.0-beta.72                          | Infrastructure as Effect. `alchemy.run.ts` _is_ the deploy: no wrangler.toml, no dashboard clicking.         |
-| [Effect](https://effect.website)                                                                        | 4.0.0-rc.108 (pinned)                  | The backend's effect system, schema, RPC and HTTP layers — all from the core `effect` package.               |
-| [Better Auth](https://better-auth.com)                                                                  | 1.6.27, via `@alchemy.run/better-auth` | Auth that owns its own tables and migrates itself at deploy time.                                            |
-| [Cloudflare D1](https://developers.cloudflare.com/d1/)                                                  | —                                      | One SQLite database, created by the stack.                                                                   |
-| [Drizzle](https://orm.drizzle.team)                                                                     | 1.0.0-rc.5                             | Typed SQL for _your_ tables. Migrations generated from `src/db/schema.ts`.                                   |
-| [Effect RPC](https://effect.website) + [`@effect/atom-react`](https://github.com/tim-smart/effect-atom) | rc.108                                 | The browser↔backend contract and its React bindings. No TanStack Query, no REST layer, no codegen.           |
-| [TanStack Start](https://tanstack.com/start)                                                            | 1.x on `Cloudflare.Website.Vite`       | File-based routing and SSR on a Worker.                                                                      |
-| [StyleX](https://stylexjs.com)                                                                          | 0.19                                   | Atomic CSS compiled at build time, zero runtime. See [`src/styles/README.md`](./src/styles/README.md).       |
-| [oxlint](https://oxc.rs) + [oxfmt](https://oxc.rs)                                                      | 1.x / 0.63                             | Lint and format. No ESLint, no Prettier, no commitlint, no husky — the whole toolchain is two Rust binaries. |
+| Piece                                                  | Version                                | Why                                                                                                          |
+| ------------------------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| [bun](https://bun.sh)                                  | 1.3.10                                 | Runtime, package manager and script runner. One tool.                                                        |
+| [jj](https://jj-vcs.dev)                               | 0.38, colocated with git               | VCS. See [CONTRIBUTING.md](./CONTRIBUTING.md); a plain git workflow also works.                              |
+| [Alchemy](https://alchemy.run)                         | 2.0.0-beta.72                          | Infrastructure as Effect. `alchemy.run.ts` _is_ the deploy: no wrangler.toml, no dashboard clicking.         |
+| [Effect](https://effect.website)                       | 4.0.0-rc.108 (pinned)                  | The backend's effect system, schema, RPC and HTTP layers — all from the core `effect` package.               |
+| [Better Auth](https://better-auth.com)                 | 1.6.27, via `@alchemy.run/better-auth` | Auth that owns its own tables and migrates itself at deploy time.                                            |
+| [Cloudflare D1](https://developers.cloudflare.com/d1/) | —                                      | One SQLite database, created by the stack.                                                                   |
+| [Drizzle](https://orm.drizzle.team)                    | 1.0.0-rc.5                             | Typed SQL for _your_ tables. Migrations generated from `src/db/schema.ts`.                                   |
+| [Effect RPC](https://effect.website)                   | rc.108                                 | The Website↔Backend contract. Server-side only: the browser talks to loaders and server functions.           |
+| [TanStack Start](https://tanstack.com/start)           | 1.x on `Cloudflare.Website.Vite`       | File-based routing and SSR on a Worker.                                                                      |
+| [StyleX](https://stylexjs.com)                         | 0.19                                   | Atomic CSS compiled at build time, zero runtime. See [`src/styles/README.md`](./src/styles/README.md).       |
+| [oxlint](https://oxc.rs) + [oxfmt](https://oxc.rs)     | 1.x / 0.63                             | Lint and format. No ESLint, no Prettier, no commitlint, no husky — the whole toolchain is two Rust binaries. |
 
 Two notes on what is _not_ here. `@effect/platform`, `@effect/rpc` and
 `@effect/schema` are not used: in Effect 4 all of that lives in core `effect`,
@@ -65,19 +65,32 @@ Website worker (TanStack Start SSR)
   ├── (marketing)/  public          /, /pricing
   ├── (auth)/       public          /login, /register, /reset-password
   ├── _app.tsx      ← THE GUARD     /app/*
-  ├── /rpc          ─┐ proxy: env.BACKEND.fetch(request)
-  └── /api/auth/*   ─┤   forwards the ORIGINAL Request unchanged
-                     ▼  (service binding, backend is private)
+  ├── loaders + server functions    src/server/api.ts  ─┐
+  │      the ONLY data layer; the browser never          │ Effect RPC over
+  │      speaks RPC and never sees /rpc                  │ env.BACKEND.fetch
+  └── /api/auth/*  ─── proxy: env.BACKEND.fetch(request) ┤ (backend is private)
+         forwards the ORIGINAL Request unchanged         ▼
 Backend worker (Effect, workersDev: false)
   ├── /api/auth/* → Better Auth  → D1 (owns user/session/account/verification)
   └── /rpc        → Effect RPC   → Drizzle → D1 (owns app tables)
 ```
 
-Four things a forker has to understand before changing anything.
+Five things a forker has to understand before changing anything.
 
-**The proxy forwards the original Request unchanged.** `src/routes/rpc.ts` and
-`src/routes/api.auth.$.ts` are each one line: `env.BACKEND.fetch(request)`. Same
-URL, same `Host`, same `Cookie`. That is what makes auth same-origin — the
+**One data layer, and it is TanStack Start.** Route loaders read, server
+functions write, `router.invalidate()` refreshes. Everything that touches the
+backend goes through `createServerFn` — loaders also run in the _browser_ on
+client-side navigation, where `env.BACKEND` does not exist. `src/server/rpc.ts`
+is the single hop from there into Effect RPC over the service binding; it
+forwards the `Cookie` header and the incoming origin so the backend's auth
+middleware resolves the session exactly as it would for a proxied request.
+Failures come back as values (`RpcResult`), because a thrown Effect error does
+not survive serialization.
+
+**The auth proxy forwards the original Request unchanged.**
+`src/routes/api.auth.$.ts` is one line: `env.BACKEND.fetch(request)` — Better
+Auth's React client runs in the browser and needs it. Same URL, same `Host`,
+same `Cookie`. That is what makes auth same-origin — the
 session cookie is first-party, there is no CORS, and Better Auth derives its own
 base URL and CSRF origin from the incoming headers. Which is why `baseURL` and
 `trustedOrigins` are deliberately unset in `src/backend/api.ts`: setting them
@@ -239,12 +252,12 @@ Three edits, in this order — the type errors walk you through it.
    `src/backend/api.ts`. Use `Effect.fn("name")`, get the caller from
    `CurrentUser`, and scope the SQL by `ownerId`.
 
-3. **Expose it** in `src/client/rpc.ts` — `Rpc.mutation("renameProject")` for a
-   write, or the local `query(...)` helper for a read (see
-   [Sharp edges](#sharp-edges) for why reads do not use `Rpc.query`). Then call
-   it from a component with `useAtom` / `useAtomValue`, passing
-   `reactivityKeys: [keys.projects]` on the mutation so dependent queries
-   re-run. `src/routes/_app/app/dashboard.tsx` is the worked example.
+3. **Expose it** in `src/server/api.ts` as a `createServerFn`. Give a write a
+   `.validator(Schema.toStandardSchemaV1(RenameProjectPayload))` using the same
+   payload schema the contract declares, and wrap any `Schema.Class` result in
+   `plain(...)` so seroval can serialize it. A read goes in a route `loader`; a
+   write is awaited in a component and followed by `router.invalidate()`.
+   `src/routes/_app/app/dashboard.tsx` is the worked example.
 
 Keep `src/backend/rpc.ts` free of server-only imports — it ships to the browser.
 The one `import type { RuntimeContext }` there is erased at compile time.
@@ -332,7 +345,7 @@ Projects is the example. To make it yours, in order:
 2. `src/backend/rpc.ts` — rename the `Project` class, `ProjectNotFound`, and the
    three `Rpc.make` declarations.
 3. `src/backend/api.ts` — rename the handlers; keep the `ownerId` filters.
-4. `src/client/rpc.ts` — rename the atoms and the `keys.projects` reactivity key.
+4. `src/server/api.ts` — rename the server functions.
 5. `src/routes/_app/app/dashboard.tsx` — the page.
 
 `bun run check` tells you when you are done.
@@ -352,8 +365,10 @@ src/
                             browser imports this same module.
     database.ts             The D1 database + Drizzle schema resource.
   db/schema.ts              App tables only. Read the ownership note at the top.
+  server/
+    rpc.ts                  Server-only RPC client over env.BACKEND + RpcResult.
+    api.ts                  Loaders and server functions. The data layer.
   client/
-    rpc.ts                  Atoms over the RPC contract; the `query` workaround.
     auth.ts                 Better Auth browser client + redirect sanitizing.
     theme.tsx               Color scheme, incl. the pre-paint init script.
     chrome.tsx              Page shells: marketing header/footer, auth card.
@@ -364,10 +379,9 @@ src/
     _app/app/**             Guarded pages.
     (marketing)/**          Public pages.
     (auth)/**               Login, register, reset password.
-    rpc.ts                  One-line proxy to the backend.
-    api.auth.$.ts           One-line splat proxy to Better Auth.
+    api.auth.$.ts           One-line splat proxy to Better Auth (browser client).
   styles/                   Tokens, themes, breakpoints, reset. Has its own README.
-  router.tsx                getRouter(); one Atom registry per request.
+  router.tsx                getRouter(). Nothing request-scoped left to build.
 scripts/                    Conventional-commit validators (bash, no deps).
 .github/workflows/          CI: typecheck, lint, format, commit messages.
 .jj-config.toml             Opt-in jj config. See CONTRIBUTING.md.
@@ -401,7 +415,7 @@ hidden in a comment you have to discover.
 
 **Effect 4 is a release candidate; Alchemy v2 is a beta.** Both are pinned to
 exact versions in `package.json` on purpose. Effect 3 is _not_ compatible with
-Alchemy v2. If you bump `effect`, you must bump `@effect/atom-react` and the
+Alchemy v2. If you bump `effect`, you must bump the
 `@effect/platform-*` packages to the matching version in the same commit —
 they share a version line and mixing them produces type errors that look like
 they are in your code.
@@ -422,16 +436,24 @@ runtime failure in production. The explicit
 `Effect.Effect<…, never, Scope.Scope | RuntimeContext>` annotation restores the
 check: if a handler or middleware layer is missing, that line stops compiling.
 
-**`Rpc.query()` from AtomRpc is unusable here.** In effect 4.0.0-rc.108,
-`AtomRpc`'s `query` helper matches procedures against a five-parameter
-`Rpc.Rpc<Tag, Payload, Success, Error, Middleware>`, omitting the sixth
-(`Requires`). `AuthMiddleware` declares `requires: RuntimeContext`, so our
-procedures carry a non-`never` `Requires`, the conditional fails to match, and
-`query` resolves to `never`. `src/client/rpc.ts` defines a local `query()`
-helper — `Rpc.runtime.atom` + `Atom.withReactivity`, which is what `query` does
-internally. `mutation` infers all six parameters and is fine. When the upstream
-conditional is fixed, delete the helper and collapse each call back to a
-one-line `Rpc.query(...)`.
+**The RPC client posts to `/rpc/`, with a trailing slash.** It issues
+`post("")` against the configured base URL and `HttpClientRequest.prependUrl`
+joins the two segments with a slash. `src/backend/api.ts` accepts `/rpc` and
+`/rpc/`; do not "fix" it by rewriting the URL on the caller's side.
+
+**seroval will not serialize a class instance.** TanStack Start serializes
+loader and server-function results with seroval, which keeps `Date`, `Map` and
+`Set` as real instances but rejects an unknown prototype outright. A decoded
+`Schema.Class` (`Project`, `User`) must go through `plain()` in
+`src/server/rpc.ts` — a spread, which is lossless because a schema class's own
+properties are exactly its declared fields.
+
+**Backend errors cross the server-function boundary as values, not throws.**
+Every server function returns `RpcResult<A>`: `{ _tag: "Success", value }` or
+`{ _tag: "Failure", failure }`, where `failure` mirrors the contract's tagged
+errors (`Unauthorized`, `ProjectNotFound`) plus a `BackendError` catch-all, each
+with a `message` ready for an `<Alert>`. Throwing instead would degrade the
+tagged error into an opaque string on the way through.
 
 **Email is stubbed.** `requireEmailVerification: false` and both send functions
 `console.log` the link, so a fresh fork runs offline. See

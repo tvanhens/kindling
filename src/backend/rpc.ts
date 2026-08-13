@@ -1,9 +1,12 @@
 /**
  * The shared RPC contract.
  *
- * This module is imported by **both** the Worker and the browser bundle, so it
- * must stay free of server-only imports (no `alchemy/*` values, no `better-auth`,
- * no `drizzle-orm`). The single `import type` below is erased at compile time.
+ * This module is imported by **both** Workers — the backend that serves the
+ * contract and the Website that calls it from `src/server/rpc.ts` — so it must
+ * stay free of server-only imports (no `alchemy/*` values, no `better-auth`, no
+ * `drizzle-orm`). The single `import type` below is erased at compile time.
+ * Routes may import the types from here too; keep those imports `import type`,
+ * or the Website's client bundle starts pulling the contract in.
  *
  * Everything here is a description: schemas, error types, the middleware
  * *identity*. Implementations live in `src/backend/api.ts`.
@@ -81,9 +84,9 @@ export class CurrentUser extends Context.Service<CurrentUser, User>()(
  * a Context tag. The implementation (which needs the Better Auth instance) is
  * `AuthMiddlewareLayer` in `src/backend/api.ts`.
  *
- * `requiredForClient` is left `false`, so the browser client does not have to
- * provide a client-side half; the session travels in the session cookie that
- * the browser sends with the `/rpc` request automatically.
+ * `requiredForClient` is left `false`, so the calling client does not have to
+ * provide a client-side half; the session travels in the `Cookie` header, which
+ * `src/server/rpc.ts` forwards from the browser's request onto the rpc.
  */
 export class AuthMiddleware extends RpcMiddleware.Service<
   AuthMiddleware,
@@ -92,6 +95,33 @@ export class AuthMiddleware extends RpcMiddleware.Service<
     requires: RuntimeContext;
   }
 >()("kindling/backend/AuthMiddleware", { error: Unauthorized }) {}
+
+// ---------------------------------------------------------------------------
+// Payloads
+//
+// Named rather than inlined into `Rpc.make` so the *same* schema can validate
+// the server function that fronts each mutation. `src/server/api.ts` feeds these
+// to `Schema.toStandardSchemaV1`, which is what TanStack's `.validator()` wants;
+// a bare `Schema.Struct` has no `~standard` property and is silently useless
+// there. One schema, both gates.
+// ---------------------------------------------------------------------------
+
+/** Payload of {@link AppRpcs} `updateProfile`. */
+export const UpdateProfilePayload = Schema.Struct({
+  name: Schema.String,
+  image: Schema.NullOr(Schema.String),
+});
+
+/** Payload of {@link AppRpcs} `createProject`. */
+export const CreateProjectPayload = Schema.Struct({
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+});
+
+/** Payload of {@link AppRpcs} `deleteProject`. */
+export const DeleteProjectPayload = Schema.Struct({
+  id: Schema.String,
+});
 
 // ---------------------------------------------------------------------------
 // The contract
@@ -106,24 +136,18 @@ export class AppRpcs extends RpcGroup.make(
   // --- profile -------------------------------------------------------------
   Rpc.make("me", { success: User }),
   Rpc.make("updateProfile", {
-    payload: {
-      name: Schema.String,
-      image: Schema.NullOr(Schema.String),
-    },
+    payload: UpdateProfilePayload,
     success: User,
   }),
 
   // --- projects (the CRUD pattern to copy) ---------------------------------
   Rpc.make("listProjects", { success: Schema.Array(Project) }),
   Rpc.make("createProject", {
-    payload: {
-      name: Schema.String,
-      description: Schema.NullOr(Schema.String),
-    },
+    payload: CreateProjectPayload,
     success: Project,
   }),
   Rpc.make("deleteProject", {
-    payload: { id: Schema.String },
+    payload: DeleteProjectPayload,
     success: Schema.String,
     error: ProjectNotFound,
   }),

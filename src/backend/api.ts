@@ -283,7 +283,13 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           return yield* auth.fetch;
         }
 
-        if (path === "/rpc") {
+        // `/rpc/` as well as `/rpc`: Effect's RPC client issues `post("")`
+        // against the configured base URL, and `HttpClientRequest.prependUrl`
+        // joins the two segments with a slash, so the request that actually
+        // leaves `src/server/rpc.ts` is `POST /rpc/`. Accepting both here is
+        // the whole fix — the alternative is rewriting the URL back on the
+        // client, which is where the old trailing-slash hack lived.
+        if (path === "/rpc" || path === "/rpc/") {
           return yield* yield* rpcServer;
         }
 

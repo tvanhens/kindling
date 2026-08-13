@@ -3,27 +3,24 @@
  *
  * This is the page every fork copies, so the pattern is deliberately explicit:
  *
- *   1. A query atom (`projectsAtom`) declares the reactivity key it depends on.
- *   2. Mutations declare the keys they invalidate when they succeed.
- *   3. Nothing refetches by hand. Writing `reactivityKeys` on the mutation is
- *      the entire cache-invalidation story.
+ *   1. The route `loader` calls a server function (`listProjects`), so the list
+ *      is in the server-rendered HTML on first paint and refetched by the
+ *      router on navigation. No client cache, no hydration handoff.
+ *   2. A mutation is an `await` on a server function, then
+ *      `router.invalidate()`. That re-runs this loader — the entire
+ *      cache-invalidation story, in one line.
+ *   3. Failures arrive as values (`RpcResult`), not throws, so an error is
+ *      narrowed and rendered like any other state.
  *
  * Ownership is enforced server-side (`ownerId = currentUser.id`, in the SQL), so
  * there is no user id anywhere in this file.
  */
-import { useAtom, useAtomValue } from "@effect/atom-react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import * as stylex from "@stylexjs/stylex";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import { useState } from "react";
 
-import {
-  createProjectAtom,
-  deleteProjectAtom,
-  keys,
-  projectsAtom,
-  rpcErrorMessage,
-} from "~/client/rpc";
+import { createProject, deleteProject, listProjects } from "~/server/api";
+import type { RpcFailure } from "~/server/rpc";
 import {
   Alert,
   Button,
@@ -41,6 +38,10 @@ import { color, font, radius, space } from "~/styles/tokens.stylex";
 
 export const Route = createFileRoute("/_app/app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Kindling" }] }),
+  // The loader runs on the server during SSR and in the browser on navigation.
+  // `listProjects` is a server function either way, which is what lets the
+  // browser half reach a Worker binding it cannot see.
+  loader: () => listProjects(),
   component: DashboardPage,
 });
 
@@ -74,15 +75,28 @@ const styles = stylex.create({
 
 function DashboardPage() {
   const { user } = Route.useRouteContext();
+  const router = useRouter();
+  const projects = Route.useLoaderData();
 
-  const projects = useAtomValue(projectsAtom);
-
-  // One delete mutation for the whole list — atoms are identities, so calling
-  // `useAtom(deleteProjectAtom)` inside each row would give every row the same
-  // shared in-flight state. `deletingId` is what makes the spinner local.
-  const [deleteResult, deleteProject] = useAtom(deleteProjectAtom);
+  // One piece of delete state for the whole list: `deletingId` is what makes
+  // the spinner local to the row that was clicked.
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const deleting = AsyncResult.isWaiting(deleteResult);
+  const [deleteFailure, setDeleteFailure] = useState<RpcFailure | null>(null);
+
+  const remove = async (id: string) => {
+    setDeletingId(id);
+    setDeleteFailure(null);
+    const result = await deleteProject({ data: { id } });
+    setDeletingId(null);
+
+    if (result._tag === "Failure") {
+      setDeleteFailure(result.failure);
+      return;
+    }
+    // Re-runs this route's loader (and every other active one). The list is
+    // fresh by the time this resolves.
+    await router.invalidate();
+  };
 
   return (
     <Stack gap="xxl">
@@ -102,7 +116,7 @@ function DashboardPage() {
             <Heading level={5} as="h2">
               Your projects
             </Heading>
-            {AsyncResult.isSuccess(projects) ? (
+            {projects._tag === "Success" ? (
               <Text size="sm" tone="subtle">
                 {projects.value.length} total
               </Text>
@@ -110,19 +124,17 @@ function DashboardPage() {
           </Row>
 
           <div aria-live="polite">
-            {AsyncResult.isFailure(deleteResult) ? (
+            {deleteFailure === null ? null : (
               <Alert tone="danger" title="Could not delete that project">
-                {rpcErrorMessage(deleteResult.cause)}
+                {deleteFailure.message}
               </Alert>
-            ) : null}
+            )}
           </div>
 
-          <div aria-busy={AsyncResult.isWaiting(projects)} aria-live="polite">
-            {AsyncResult.isInitial(projects) ? (
-              <Text tone="muted">Loading projects…</Text>
-            ) : AsyncResult.isFailure(projects) ? (
+          <div aria-busy={deletingId !== null} aria-live="polite">
+            {projects._tag === "Failure" ? (
               <Alert tone="danger" title="Could not load your projects">
-                {rpcErrorMessage(projects.cause)}
+                {projects.failure.message}
               </Alert>
             ) : projects.value.length === 0 ? (
               <div {...stylex.props(styles.empty)}>
@@ -151,17 +163,11 @@ function DashboardPage() {
                       </Stack>
                       <Button
                         aria-label={`Delete ${project.name}`}
-                        loading={deleting && deletingId === project.id}
+                        disabled={deletingId !== null}
+                        loading={deletingId === project.id}
                         loadingLabel="Deleting"
                         onClick={() => {
-                          setDeletingId(project.id);
-                          // Invalidating the `projects` key is the whole
-                          // refresh: `projectsAtom` declares the same key, so it
-                          // re-runs as soon as this succeeds.
-                          deleteProject({
-                            payload: { id: project.id },
-                            reactivityKeys: [keys.projects],
-                          });
+                          void remove(project.id);
                         }}
                         size="sm"
                         variant="ghost"
@@ -183,13 +189,40 @@ function DashboardPage() {
 }
 
 function CreateProjectForm() {
-  const [result, createProject] = useAtom(createProjectAtom);
+  const router = useRouter();
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<RpcFailure | null>(null);
 
-  const pending = AsyncResult.isWaiting(result);
   const nameError = submitted && name.trim() === "" ? "Give the project a name." : undefined;
+
+  const submit = async () => {
+    setSubmitted(true);
+    setFailure(null);
+    if (name.trim() === "") return;
+
+    setPending(true);
+    const result = await createProject({
+      data: {
+        name: name.trim(),
+        description: description.trim() === "" ? null : description.trim(),
+      },
+    });
+    setPending(false);
+
+    if (result._tag === "Failure") {
+      setFailure(result.failure);
+      return;
+    }
+
+    setName("");
+    setDescription("");
+    setSubmitted(false);
+    await router.invalidate();
+  };
 
   return (
     <Card padding="xl">
@@ -197,19 +230,7 @@ function CreateProjectForm() {
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          setSubmitted(true);
-          if (name.trim() === "") return;
-
-          createProject({
-            payload: {
-              name: name.trim(),
-              description: description.trim() === "" ? null : description.trim(),
-            },
-            reactivityKeys: [keys.projects],
-          });
-          setName("");
-          setDescription("");
-          setSubmitted(false);
+          void submit();
         }}
       >
         <Stack gap="lg">
@@ -224,15 +245,16 @@ function CreateProjectForm() {
           </Stack>
 
           <div aria-live="polite">
-            {AsyncResult.isFailure(result) ? (
+            {failure === null ? null : (
               <Alert tone="danger" title="Could not create the project">
-                {rpcErrorMessage(result.cause)}
+                {failure.message}
               </Alert>
-            ) : null}
+            )}
           </div>
 
           <Field error={nameError} label="Name" required>
             <Input
+              disabled={pending}
               name="name"
               onChange={(event) => setName(event.target.value)}
               placeholder="Ignition"
@@ -242,6 +264,7 @@ function CreateProjectForm() {
 
           <Field hint="Optional." label="Description">
             <Textarea
+              disabled={pending}
               name="description"
               onChange={(event) => setDescription(event.target.value)}
               placeholder="What is it for?"
