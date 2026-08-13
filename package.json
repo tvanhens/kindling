@@ -5,7 +5,7 @@
   "description": "An opinionated launchpad for building products on Cloudflare.",
   "type": "module",
   "scripts": {
-    "dev": "alchemy dev --yes",
+    "dev": "alchemy dev",
     "deploy": "alchemy deploy --yes",
     "destroy": "alchemy destroy --yes",
     "plan": "alchemy plan",
